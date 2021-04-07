@@ -12,8 +12,7 @@
  *******************************************************************************************/
 
 
-#ifndef DSTAR_H
-#define DSTAR_H
+#pragma once
 #include <Arduino.h>
 
 
@@ -21,8 +20,6 @@ class DSTAR
 {
 public:
     static constexpr uint16_t RF_HEADER_SIZE{42};//in real data(39)+crc(2)+1 padding
-    DSTAR();
-
     void convolution(byte* input, byte* output);
 
 
@@ -44,18 +41,11 @@ public:
     int size_buffer{RF_HEADER_SIZE};
     unsigned int crc;
     byte acc_error[2][4];
-
+    uint16_t calcCCITTCRC(uint8_t* buffer, int startpos, int length);
 private:
-
     void fcsbit(byte tbyte);
     void compute_crc(byte* array);
     void compute_error_branch(int ptr, byte current_state, byte encoded_input, byte* history);
     byte hamming_distance(byte encoder_channel, byte encoded_input);
     byte set_position(byte value, byte next_state, byte current_state);
-
-
 };
-
-extern DSTAR Dstar;
-
-#endif
