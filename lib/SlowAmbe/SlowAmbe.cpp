@@ -136,13 +136,13 @@ void SlowAmbe::setMSG(uint8_t* msg)
         p_data[0] = PKT_TYPE_MSG | (0xFF & i);
         p_data[1] = msg[0 + offsetInMsg];
         p_data[2] = msg[1 + offsetInMsg];
-        Serial << _HEX(data) << endl;
+        //        Serial << _HEX(data) << endl;
         comBuffer.push(data);
         p_data[0] = msg[2 + offsetInMsg];
         p_data[1] = msg[3 + offsetInMsg];
         p_data[2] = msg[4 + offsetInMsg];
         comBuffer.push(data);
-        Serial << _HEX(data) << endl;
+        //        Serial << _HEX(data) << endl;
     }
 }
 

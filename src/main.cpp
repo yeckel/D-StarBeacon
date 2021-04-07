@@ -29,7 +29,7 @@ SX1278 radio = new Module(LORA_CS, LORA_IRQ, LORA_RST, LORA_IO1);
 MorseClient morse(&radio);
 SSD1306Wire display(0x3c, SDA, SCL, GEOMETRY_128_64);
 TinyGPSPlus gps;
-HardwareSerial GPS(1);
+HardwareSerial gpsSerial(1);
 BluetoothSerial ESP_BT;
 AXP20X_Class axp;
 TaskHandle_t BeaconSenderHandler;
@@ -157,16 +157,17 @@ void prepareHeader()
     dStar.pseudo_random(headerTXBuffer, 660);
 }
 
-void prepareDPRS()
+void prepareDPRS(const String& data)
 {
-    String data{"OK1CHP-1>API705,DSTAR*:!4946.70N/01329.43E-/A=001198TTGO Esp32 rulez!\r"};
     auto crc = dStar.calcCCITTCRC((uint8_t*)data.c_str(), 0, data.length());
     String dprs = String("$$CRC" + String(crc, HEX) + "," + data);
+    Serial << dprs;
     sa.setDPRS((uint8_t*)dprs.c_str(), dprs.length());
 }
 void setup()
 {
     Serial.begin(115200);
+    gpsSerial.begin(9600, SERIAL_8N1, 12, 15);
     radio.reset();
     Serial.print(F("[SX1278] Initializing ... "));
     pinMode(LORA_IO2, OUTPUT);
@@ -183,16 +184,55 @@ void setup()
     checkLoraState(radio.setDataShaping(RADIOLIB_SHAPING_0_5));
     attachInterrupt(LORA_IO1, dataClk, RISING);
 
-    //    memset(slowAmbeData, 0xff, sizeof(slowAmbeData));
-    prepareHeader();
-    sa.setMSG(DSTAR_MSG);
-    prepareDPRS();
-    Serial << "Buffer: " << sa.comBuffer.size() << endl;
-    sleep(1);
-    startTX();
+    Serial << "Setup done!" << endl;
 }
 
+String formatDPRSString(String callsign, double lat, double lon, int alt, String message)
+{
+    //OK1CHP-1>API705,DSTAR*:!4946.70N/01329.43E-/A=001198TTGO Esp32 rulez!\r
+    int deg_lat = int(abs(lat));
+    char buff_lat[3];
+    sprintf(buff_lat, "%02d", deg_lat);
+    double min_lat = (lat - deg_lat) * 60.0f;
+    int deg_lon = int(abs(lon));
+    double min_lon = (lon - deg_lon) * 60.0f;
+    char buff_long[4];
+    sprintf(buff_long, "%03d", deg_lon);
+
+    char buff_alt[7];
+    sprintf(buff_alt, "%06d", alt);
+    return String(callsign
+                  + ">API705,DSTAR*:!"
+                  + String(buff_lat) + String(min_lat, 2) + ((lat > 0.0f) ? "N" : "S") + "/"
+                  + String(buff_long) + String(min_lon, 2) + ((lon > 0.0f) ? "E" : "W")
+                  + "-/A=" + String(buff_alt)
+                  + message
+                  + "\r");
+}
+
+uint8_t lastSecond{0};
 void loop()
 {
     //    beaconSender();
+    while(gpsSerial.available() > 0)
+    {
+        auto ch = gpsSerial.read();
+        gps.encode(ch);
+    }
+    if(gps.time.isUpdated())
+    {
+        Serial << gps.time.value() << endl;
+        auto newSecond = gps.time.second();
+        if(newSecond % 20 == 0 && lastSecond != newSecond)
+        {
+            lastSecond = newSecond;
+            prepareHeader();
+            sa.setMSG(DSTAR_MSG);
+            prepareDPRS(formatDPRSString("OK1CHP-1",
+                                         gps.location.lat(), gps.location.lng(), gps.altitude.feet(),
+                                         "T-BEAM GPS"));
+            startTX();
+        }
+
+    }
 }
