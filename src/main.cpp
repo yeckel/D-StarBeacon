@@ -53,7 +53,6 @@ volatile uint preambleBitPos{0};
 uint8_t stoppingFrame[] = {0xaa, 0xaa, 0xaa, 0xaa, 0x13, 0x5e};
 volatile uint stoppingFramePos{0};
 
-uint8_t DPRS_DATA[] = "$$CRC9B50,OK1CHP-1>API705,DSTAR*:!4946.70N/01329.43E-/A=001198Playing with ic-705\r";//len 82
 uint8_t DSTAR_MSG[SlowAmbe::DSTAR_MSG_SIZE] = {'D', '-', 'S', 't', 'a', 'r', ' ', 'b', 'e', 'a', 'c', 'o', 'n', ' ', 'e', 's', 'p', '3', '2', '!'};
 
 uint8_t dStarHeader[DSTAR::RF_HEADER_SIZE] = {0x0, 0x0, 0x0, //flag 1,2,3
@@ -71,6 +70,7 @@ volatile uint headerBitPos{0};
 uint8_t slowAmbeData[SlowAmbe::SLOW_AMBE_SIZE] = {0x4d, 0xb2, 0x44, 0x12, 0x03, 0x68, 0x14, 0x64, 0x13, 0x66, 0x66, 0x66};//first 9 from real packet
 
 SlowAmbe sa;
+DSTAR dStar;
 
 volatile uint ambeDataBitPos{0};
 bool isFirstAmbe{true};
@@ -151,12 +151,19 @@ void print_data(byte* data, int dataSize)
 
 void prepareHeader()
 {
-    Dstar.add_crc(dStarHeader);
-    Dstar.convolution(dStarHeader, headerTXBuffer);   //source, dest
-    Dstar.interleave(headerTXBuffer);
-    Dstar.pseudo_random(headerTXBuffer, 660);
+    dStar.add_crc(dStarHeader);
+    dStar.convolution(dStarHeader, headerTXBuffer);   //source, dest
+    dStar.interleave(headerTXBuffer);
+    dStar.pseudo_random(headerTXBuffer, 660);
 }
 
+void prepareDPRS()
+{
+    String data{"OK1CHP-1>API705,DSTAR*:!4946.70N/01329.43E-/A=001198TTGO Esp32 rulez!\r"};
+    auto crc = dStar.calcCCITTCRC((uint8_t*)data.c_str(), 0, data.length());
+    String dprs = String("$$CRC" + String(crc, HEX) + "," + data);
+    sa.setDPRS((uint8_t*)dprs.c_str(), dprs.length());
+}
 void setup()
 {
     Serial.begin(115200);
@@ -179,7 +186,7 @@ void setup()
     //    memset(slowAmbeData, 0xff, sizeof(slowAmbeData));
     prepareHeader();
     sa.setMSG(DSTAR_MSG);
-    sa.setDPRS(DPRS_DATA, 82);
+    prepareDPRS();
     Serial << "Buffer: " << sa.comBuffer.size() << endl;
     sleep(1);
     startTX();
