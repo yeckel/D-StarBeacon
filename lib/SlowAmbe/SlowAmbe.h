@@ -26,7 +26,7 @@ public:
     {
         return m_haveMsg;
     }
-    RingBuf<AmbeData, 120> comBuffer;
+    RingBuf<AmbeData, 220> comBuffer;
 private:
     Stream* m_outputStream{nullptr};
     uint8_t dStarMsg[DSTAR_MSG_SIZE];
@@ -34,7 +34,7 @@ private:
     bool m_isEven{true};
     uint8_t dataLen{0};
     uint8_t dataType{0};
-    uint dataCounter{0};
+    uint dataCounter{21};
     bool m_haveMsg{false};
     void storeHeaderData(uint8_t* buff, bool isFirst);
     void sendPlainData(uint8_t* buff, bool isFirst);

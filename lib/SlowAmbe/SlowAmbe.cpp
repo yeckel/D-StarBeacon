@@ -143,7 +143,7 @@ void SlowAmbe::reset()
     memset(dStarMsg, 0x20, sizeof(dStarMsg));//spaces
     posMSG = 0;
     m_isEven = true;//0 is even
-    dataCounter = 0;
+    dataCounter = 21;
     m_haveMsg = false;
 }
 
@@ -219,17 +219,18 @@ void SlowAmbe::setDPRS(uint8_t* msg, uint size)
 void SlowAmbe::getNextData(uint32_t& data)
 {
     //first and every 21st packet is sync one
-    if((dataCounter % 21) == 0)
+    if(dataCounter  == 21)
     {
+        dataCounter = 0;
         data = syncFrame;
-        //        Serial << "Sync";
+        Serial << "Sync" << endl;
     }
     else
     {
         comBuffer.pop(data);
         uint8_t* p_data{(uint8_t*)& data};
         scrambleReverseOutput(p_data, 3);
-        //        Serial << "Data";
+        Serial << "Data" << endl;
     }
     dataCounter++;
 }
