@@ -2,7 +2,7 @@
 //#include <iostream>
 #include <string.h>
 #include <Streaming.h>
-#include <Scrambler.h>
+#include "Scrambler.h"
 
 namespace
 {
@@ -12,6 +12,7 @@ namespace
     static constexpr uint8_t PKT_TYPE_GPS{0x30};
     static constexpr uint8_t PKT_TYPE_HEADER{0x50};//repeatet RF header
     static constexpr uint8_t PKT_TYPE_SQUELCH{0x20};
+    static constexpr uint8_t PKT_TYPE_FILL{0x60};
     static constexpr uint8_t FILLER_BYTE{0x66};
     static constexpr uint8_t BYTES_PER_PACKET{5}; //2+3
     static constexpr uint32_t syncFrame{0x0068b4aa};//101010101011010001101000 every 1st and 21th !!DATA!! frame
@@ -20,7 +21,26 @@ uint8_t min(uint8_t a, uint8_t b)
 {
     return a <= b ? a : b;
 }
-void SlowAmbe::storeData(uint8_t* buff, bool isFirst, uint8_t* dest, uint& pos)
+void SlowAmbe::storeHeaderData(uint8_t* buff, bool isFirst)
+{
+    if(m_haveMsg)
+    {
+        return;
+    }
+    uint8_t cnt = isFirst ?
+                  min(dataLen, 2) ://first line max 2 bytes
+                  min(dataLen, 3); //2nd line max 3 bytes
+    uint8_t offset = isFirst ? 1 : 0;
+    for(uint8_t i = 0; i < cnt; i++)
+    {
+        dStarMsg[posMSG] = buff[i + offset];
+        posMSG++;
+        m_haveMsg = posMSG == DSTAR_MSG_SIZE;
+    }
+}
+
+
+void SlowAmbe::sendPlainData(uint8_t* buff, bool isFirst)
 {
     uint8_t cnt = isFirst ?
                   min(dataLen, 2) ://first line max 2 bytes
@@ -28,20 +48,24 @@ void SlowAmbe::storeData(uint8_t* buff, bool isFirst, uint8_t* dest, uint& pos)
     uint8_t offset = isFirst ? 1 : 0;
     for(uint8_t i = 0; i < cnt; i++)
     {
-        dest[pos] = buff[i + offset];
-        pos++;
+        uint8_t ch = buff[i + offset];
+        if(m_outputStream)
+        {
+            m_outputStream->write(ch);
+        }
+        //        Serial << "0x" << _HEX(ch) << " ";
     }
 }
 
-SlowAmbe::SlowAmbe()
+void SlowAmbe::setDataOutput(Stream* outputStream)
 {
-    reset();
+    m_outputStream = outputStream;
 }
 
 void SlowAmbe::receiveData(uint8_t* buff)
 {
-    bool isEven = !(lineNr % 2);
-    if(isEven)
+    scrambleReverseInput(buff, 3);
+    if(m_isEven)
     {
         dataLen = (buff[0] & PKT_LEN_MAP);
         dataType = (buff[0] & PKT_TYPE_MAP);
@@ -49,81 +73,83 @@ void SlowAmbe::receiveData(uint8_t* buff)
         {
         case PKT_TYPE_MSG:
             dataLen = 5;
-            Serial << "T";
-            storeData(buff, isEven, dStarMsg, posMSG);
+            //            std::cout << "T";
+            storeHeaderData(buff, m_isEven);
             break;
         case PKT_TYPE_GPS:
-            Serial << "A";
-            storeData(buff, isEven, dStarGPS, posGPS);
+            //            std::cout << "A";
+            sendPlainData(buff, m_isEven);
+            //            for(uint i = 0; i < 3; i++)
+            //            {
+            //                std::cout << "0x" << std::hex << int (buff[i]) << ", ";
+            //            }
             break;
         case PKT_TYPE_HEADER:
-            Serial << "H";
-            storeData(buff, isEven, dStarRFHeader, posRF);
+            //            std::cout << "H";
             break;
         case PKT_TYPE_SQUELCH:
-            Serial << "C";
+            //            std::cout << "C";
+            break;
+        case PKT_TYPE_FILL:
             break;
         default:
             Serial << "U";//unknown
+            for(uint i = 0; i < 3; i++)
+            {
+                Serial << "0x" << _HEX(buff[i]) << ", ";
+            }
+            break;
         }
     }
     else
     {
-        if(dataLen > 2)
+        if(dataLen >= 2)
         {
             dataLen -= 2;
-        }
-        switch(dataType)
-        {
-        case PKT_TYPE_MSG:
-            //            Serial << "T" << int(dataLen);
-            storeData(buff, isEven, dStarMsg, posMSG);
-            break;
-        case PKT_TYPE_GPS:
-            //            Serial << "A" << int(dataLen);
-            storeData(buff, isEven, dStarGPS, posGPS);
-            break;
-        case PKT_TYPE_HEADER:
-            //            Serial << "H" << int(dataLen);
-            storeData(buff, isEven, dStarRFHeader, posRF);
-            break;
-        case PKT_TYPE_SQUELCH:
-            //            Serial << "C" << int(dataLen);
-            break;
+            switch(dataType)
+            {
+            case PKT_TYPE_MSG:
+                //            std::cout << "t";
+                storeHeaderData(buff, m_isEven);
+                break;
+            case PKT_TYPE_GPS:
+                //            std::cout << "a";
+                sendPlainData(buff, m_isEven);
+                break;
+            case PKT_TYPE_HEADER:
+                //            std::cout << "h";
+                break;
+            case PKT_TYPE_SQUELCH:
+                //            std::cout << "c";
+                break;
+            case PKT_TYPE_FILL:
+                break;
+            default:
+                Serial << "u";//unknown
+                for(uint i = 0; i < 3; i++)
+                {
+                    Serial << "0x" << _HEX(buff[i]) << ", ";
+                }
+                break;
+            }
         }
     }
     //    Serial << "  :" << hex << int(buff[0]) << " " << int(buff[1]) << " " << int(buff[2]) << endl;
-    lineNr++;
+    m_isEven = !m_isEven;
 }
 
 void SlowAmbe::reset()
 {
-    memset(dStarMsg, 0x00, sizeof(dStarMsg));
-    memset(dStarGPS, 0x00, sizeof(dStarGPS));
-    memset(dStarRFHeader, 0x00, sizeof(dStarRFHeader));
+    memset(dStarMsg, 0x20, sizeof(dStarMsg));//spaces
     posMSG = 0;
-    posGPS = 0;
-    posRF = 0;
-    lineNr = 0;
+    m_isEven = true;//0 is even
     dataCounter = 0;
+    m_haveMsg = false;
 }
 
-uint8_t* SlowAmbe::getDStarGPSData(uint16_t& size)
+uint8_t* SlowAmbe::getDStarMsg()
 {
-    size = posGPS;
-    return dStarGPS;
-}
-
-uint8_t* SlowAmbe::getDStarMsg(uint16_t& size)
-{
-    size = sizeof(dStarMsg);
     return dStarMsg;
-}
-
-uint8_t* SlowAmbe::getDStarRFHeader(uint16_t& size)
-{
-    size = posRF;
-    return dStarRFHeader;
 }
 
 void SlowAmbe::setMSG(uint8_t* msg)
@@ -163,8 +189,6 @@ void SlowAmbe::setDPRS(uint8_t* msg, uint size)
                              BYTES_PER_PACKET :
                              size - (neededPackets - 1) * BYTES_PER_PACKET ;
 
-        //        Serial << "bytesInPkt" << _DEC(bytesInPkt) << endl;
-        //        Serial << "offsetInMsg" << _DEC(offsetInMsg) << endl;
         p_data[0] = PKT_TYPE_GPS | (0xFF & bytesInPkt);
         p_data[1] = msg[0 + offsetInMsg];
         if(bytesInPkt >= 2)
@@ -189,6 +213,7 @@ void SlowAmbe::setDPRS(uint8_t* msg, uint size)
         comBuffer.push(data);
         //        Serial << _HEX(data) << endl;
     }
+    //    Serial << "Size" << comBuffer.size() << endl;
 }
 
 void SlowAmbe::getNextData(uint32_t& data)

@@ -4,18 +4,6 @@
 namespace
 {
     static constexpr uint8_t scrablerData[] = {0x70U, 0x4FU, 0x93U, 0x40U, 0x64U, 0x74U, 0x6DU, 0x30U, 0x2BU, 0x70U, 0x4FU, 0x93U};
-    static constexpr uint8_t syncFrame[] = {0xaa, 0xb4, 0x68};//101010101011010001101000 every 1st and 21th !!DATA!! frame
-}
-bool isSyncFrame(uint8_t* buff)
-{
-    return buff[9] == syncFrame[0] &&
-           buff[10] == syncFrame[1] &&
-           buff[11] == syncFrame[2];
-}
-
-void getSyncFrame(uint8_t* buff)
-{
-    memset(buff, 0xFF, 9);
 }
 
 uint8_t reverse(uint8_t b)
