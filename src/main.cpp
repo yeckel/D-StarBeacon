@@ -30,7 +30,7 @@ MorseClient morse(&radio);
 SSD1306Wire display(0x3c, SDA, SCL, GEOMETRY_128_64);
 TinyGPSPlus gps;
 HardwareSerial gpsSerial(1);
-BluetoothSerial ESP_BT;
+BluetoothSerial serialBT;
 AXP20X_Class axp;
 TaskHandle_t BeaconSenderHandler;
 
@@ -52,6 +52,7 @@ uint8_t preambleAndBitSync[] = {0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 
 volatile uint preambleBitPos{0};
 uint8_t stoppingFrame[] = {0xaa, 0xaa, 0xaa, 0xaa, 0x13, 0x5e};
 volatile uint stoppingFramePos{0};
+uint8_t plainDataBTRXBuff[5];
 
 uint8_t DSTAR_MSG[SlowAmbe::DSTAR_MSG_SIZE] = {'D', '-', 'S', 't', 'a', 'r', ' ', 'b', 'e', 'a', 'c', 'o', 'n', ' ', 'e', 's', 'p', '3', '2', '!'};
 
@@ -74,11 +75,18 @@ DSTAR dStar;
 
 volatile uint ambeDataBitPos{0};
 bool isFirstAmbe{true};
+volatile bool isPTTPressed{false};
+volatile bool stopTx{false};
 
 float f = 434.800f + 0.0024f - 0.00091;
 
+void prepareHeader();
+
 void startTX()
 {
+    isPTTPressed = true;
+    prepareHeader();
+    sa.setMSG(DSTAR_MSG);
     ambeDataBitPos = SlowAmbe::SLOW_AMBE_BITSIZE;//to run into data fetch immediately
     checkLoraState(radio.transmitDirect());
     Serial << "Start transmit" << endl;
@@ -103,7 +111,7 @@ void dataClk()
     }
     else if(headerBitPos < 660)
     {
-        //        Serial << "H";
+        Serial << "H";
         sendBit(headerTXBuffer, headerBitPos);
         headerBitPos++;
     }
@@ -113,7 +121,6 @@ void dataClk()
         if(ambeDataBitPos == SlowAmbe::SLOW_AMBE_BITSIZE ||
            isFirstAmbe)
         {
-            //            Serial << endl;
             uint32_t data;
             uint8_t* p_data{(uint8_t*)& data};
             sa.getNextData(data);
@@ -121,24 +128,19 @@ void dataClk()
             ambeDataBitPos = 0;
             isFirstAmbe = false;
         }
-        //        Serial << "A";
+        Serial << "A";
         sendBit(slowAmbeData, ambeDataBitPos);
         ambeDataBitPos++;
     }
     else if(stoppingFramePos < sizeof(stoppingFrame) * 8)
     {
-        //        Serial << "S";
+        Serial << "S";
         sendBit(stoppingFrame, stoppingFramePos);
         stoppingFramePos++;
     }
     else
     {
-        radio.standby();//TODO receive
-        preambleBitPos = 0;
-        headerBitPos = 0;
-        ambeDataBitPos = 0;
-        stoppingFramePos = 0;
-        isFirstAmbe = true;
+        stopTx = true;
     }
 }
 void print_data(byte* data, int dataSize)
@@ -168,6 +170,7 @@ void setup()
 {
     Serial.begin(115200);
     gpsSerial.begin(9600, SERIAL_8N1, 12, 15);
+    serialBT.begin("D-Star Beacon");
     radio.reset();
     Serial.print(F("[SX1278] Initializing ... "));
     pinMode(LORA_IO2, OUTPUT);
@@ -211,6 +214,7 @@ String formatDPRSString(String callsign, double lat, double lon, int alt, String
 }
 
 uint8_t lastSecond{0};
+uint8_t readBTByte{0};
 void loop()
 {
     //    beaconSender();
@@ -219,20 +223,62 @@ void loop()
         auto ch = gpsSerial.read();
         gps.encode(ch);
     }
-    if(gps.time.isUpdated())
-    {
-        Serial << gps.time.value() << endl;
-        auto newSecond = gps.time.second();
-        if(newSecond % 20 == 0 && lastSecond != newSecond)
-        {
-            lastSecond = newSecond;
-            prepareHeader();
-            sa.setMSG(DSTAR_MSG);
-            prepareDPRS(formatDPRSString("OK1CHP-1",
-                                         gps.location.lat(), gps.location.lng(), gps.altitude.feet(),
-                                         "T-BEAM GPS"));
-            startTX();
-        }
 
+    if(!sa.comBuffer.isFull())
+    {
+        while(serialBT.available() > 0)
+        {
+            auto ch = serialBT.read();
+            Serial << "0x" << _HEX(ch) << ", ";
+            plainDataBTRXBuff[readBTByte] = ch;
+            readBTByte++;
+            if(readBTByte == sizeof(plainDataBTRXBuff))
+            {
+                Serial << "Adding: 5 " << endl;
+                sa.setDPRS(plainDataBTRXBuff, sizeof(plainDataBTRXBuff));
+                readBTByte = 0;
+                break;
+            }
+        }
+        if(readBTByte != 0)
+        {
+            Serial << "Adding: " << uint(readBTByte) << endl;
+            sa.setDPRS(plainDataBTRXBuff, readBTByte);
+            readBTByte = 0;
+        }
+    }
+    else
+    {
+        Serial << "TX buffer is full!!" << endl;
+    }
+    //    if(gps.time.isUpdated())
+    //    {
+    //        Serial << gps.time.value() << endl;
+    //        auto newSecond = gps.time.second();
+    //        if(newSecond % 20 == 0 && lastSecond != newSecond)
+    //        {
+    //            lastSecond = newSecond;
+    //            prepareDPRS(formatDPRSString("OK1CHP-1",
+    //                                         gps.location.lat(), gps.location.lng(), gps.altitude.feet(),
+    //                                         "T-BEAM GPS"));
+    //        }
+    //    }
+    if(!sa.comBuffer.isEmpty() && !isPTTPressed)
+    {
+        startTX();
+    }
+
+    if(isPTTPressed && stopTx)
+    {
+        Serial << "End TX" << endl;
+        isPTTPressed = false;
+        stopTx = false;
+        radio.standby();//TODO receive
+        preambleBitPos = 0;
+        headerBitPos = 0;
+        ambeDataBitPos = 0;
+        stoppingFramePos = 0;
+        isFirstAmbe = true;
+        sa.reset();
     }
 }
