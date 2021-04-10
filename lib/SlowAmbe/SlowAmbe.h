@@ -18,7 +18,7 @@ public:
     */
     void receiveData(uint8_t* buff);
     void reset();
-    uint8_t* getDStarMsg();
+    const uint8_t* getDStarMsg();
     void setMSG(uint8_t* msg);
     void setDPRS(uint8_t* msg, uint size);
     void getNextData(uint32_t& data);
@@ -37,7 +37,7 @@ public:
     RingBuf<AmbeData, 100> comBuffer;
 private:
     Stream* m_outputStream{nullptr};
-    uint8_t dStarMsg[DSTAR_MSG_SIZE];
+    uint8_t dStarMsg[DSTAR_MSG_SIZE + 1];
     uint posMSG{0};
     bool m_isEven{true};
     uint8_t dataLen{0};

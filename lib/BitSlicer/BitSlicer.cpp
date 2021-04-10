@@ -52,7 +52,7 @@ bool BitSlicer::appendBit(bool bit)
                     receivedAmbeByteNr = 0;
                     if(!isSyncVrame)
                     {
-                        Serial << endl << "At sync" << endl;
+                        Serial << endl << "Sync frame" << endl;
                         return true;
                     }
                 }

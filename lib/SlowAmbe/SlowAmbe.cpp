@@ -154,8 +154,9 @@ void SlowAmbe::reset()
     m_haveMsg = false;
 }
 
-uint8_t* SlowAmbe::getDStarMsg()
+const uint8_t* SlowAmbe::getDStarMsg()
 {
+    dStarMsg[sizeof(dStarMsg) - 1] = 0x00;//c-string end
     return dStarMsg;
 }
 

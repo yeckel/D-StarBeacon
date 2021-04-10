@@ -33,7 +33,6 @@ TinyGPSPlus gps;
 HardwareSerial gpsSerial(1);
 BluetoothSerial serialBT;
 AXP20X_Class axp;
-TaskHandle_t BeaconSenderHandler;
 
 void checkLoraState(int state)
 {
@@ -82,11 +81,33 @@ bool isFirstAmbe{true};
 volatile bool isPTTPressed{false};
 volatile bool stopTx{false};
 bool bluetoothXOFF{false};
-volatile bool inSync = false;
+volatile bool inSync{false};
 volatile bool receivedPacket{false};
 
 float f = 434.800f + 0.00244f;//t-beam sx1278 has XTAL offset
 
+bool isGPSValid{false};
+bool isBTConnected{false};
+
+void repaintDisplay()
+{
+    display.clear();
+    display.drawString(0, 0, isPTTPressed ? "TX" : "RX");
+    char buff[100];
+    sprintf(buff, "f:%7.3fMHz", f);
+    display.drawString(20, 0, buff);
+    display.drawString(90, 0, isGPSValid ? "GPS" : "gps");
+    display.drawString(115, 0, isBTConnected ? "BT" : "bt");
+    display.drawString(0, 30, "Msg:");
+    if(sa.haveDStarMsg())
+    {
+        //        auto m = (const char*)sa.getDStarMsg();
+        //        String msg{m};
+        Serial << "Msg:";
+        //display.drawString(20, 30, msg);
+    }
+    display.display();
+}
 //----------------------------------TX bit routines -----------------------
 void sendBit(uint8_t* sendBuff, uint buffBitPos)
 {
@@ -161,6 +182,7 @@ void txBit()
     }
     else
     {
+        radio.clearDio1Action();
         stopTx = true;
     }
 }
@@ -168,37 +190,19 @@ void txBit()
 void rxBit()
 {
     auto receivedBit = digitalRead(LORA_IO2);
-    if(!inSync)
-    {
-        return;
-    }
     //    Serial << receivedBit;
     auto commStopped = bs.appendBit(receivedBit);
     if(commStopped)
     {
         Serial << endl << "RX Stopped" << endl;
-        inSync = false;
-        digitalWrite(BUILTIN_LED, false);
+        radio.clearDio1Action();
         receivedPacket = true;
-    }
-}
-//--------------------------------Interrupt handlers-------------------------------------
-void dataClockInterruptHandler()
-{
-    if(isPTTPressed)
-    {
-        txBit();
-    }
-    else
-    {
-        rxBit();
     }
 }
 
 void receivedSyncWord(void)
 {
-    inSync = true;
-    Serial << __FUNCTION__ << endl;
+    radio.setDio1Action(rxBit);
 }
 //----------------------------------------------------------------------------------------
 void prepareHeader()
@@ -246,29 +250,39 @@ void prepareDPRS(const String& data)
 void startTX()
 {
     isPTTPressed = true;
+    repaintDisplay();
     prepareHeader();
+    sa.reset();
+    bs.reset();
     sa.setMSG(DSTAR_MSG);
     ambeDataBitPos = SlowAmbe::SLOW_AMBE_BITSIZE;//to run into data fetch immediately
-    radio.setDio0Action(nullptr);
+    radio.clearDio0Action();
+    radio.setDio1Action(txBit);
     checkLoraState(radio.transmitDirect());
     Serial << __FUNCTION__ << endl;
 }
 void startRX()
 {
     isPTTPressed = false;
+    repaintDisplay();
+    sa.reset();
+    bs.reset();
     radio.setDio0Action(receivedSyncWord);
-    checkLoraState(radio.enableOokBitSychronizer());
     checkLoraState(radio.receiveDirect());
-    checkLoraState(radio.setSyncWord(syncWord, sizeof(syncWord)));
     Serial << __FUNCTION__ << endl;
 }
 
 void setup()
 {
+    pinMode(BUILTIN_LED, OUTPUT);
     Serial.begin(115200);
     gpsSerial.begin(9600, SERIAL_8N1, 12, 15);
     serialBT.begin("D-Star Beacon");
     sa.setDataOutput(&serialBT);
+    display.init();
+    display.flipScreenVertically();
+    display.setTextAlignment(TEXT_ALIGN_LEFT);
+    display.setFont(ArialMT_Plain_10);
     bs.setHeaderBuffer(headerRXTXBuffer, DSTAR::RF_HEADER_SIZE * 2); //TODO refactore to constrctor
     radio.reset();
     Serial.print(F("[SX1278] Initializing ... "));
@@ -282,7 +296,8 @@ void setup()
     //    morse.print("001");
     checkLoraState(radio.setEncoding(RADIOLIB_ENCODING_NRZ));
     checkLoraState(radio.setDataShaping(RADIOLIB_SHAPING_0_5));
-    radio.setDio1Action(dataClockInterruptHandler);
+    checkLoraState(radio.enableOokBitSychronizer());
+    checkLoraState(radio.setSyncWord(syncWord, sizeof(syncWord)));
 
     startRX();
 }
@@ -327,6 +342,16 @@ void loop()
     {
         auto ch = gpsSerial.read();
         gps.encode(ch);
+    }
+    if(gps.location.isValid() != isGPSValid)
+    {
+        isGPSValid = gps.location.isValid();
+        repaintDisplay();
+    }
+    if(serialBT.connected() != isBTConnected)
+    {
+        isBTConnected =  serialBT.connected();
+        repaintDisplay();
     }
 
     if(!sa.isBufferFull())
@@ -392,30 +417,18 @@ void loop()
         startRX();
         stopTx = false;
         resetTXData();
-        sa.reset();
     }
 
     if(receivedPacket)
     {
-        Serial << "fd: " << radio.getFrequencyError(true) << endl;
+        receivedPacket = false;
+        radio.receiveDirect();//reset IRQ flags
+        repaintDisplay();
         if(bs.haveHeader())
         {
             decodeHeader(headerRXTXBuffer);
         }
-        receivedPacket = false;
-        bs.reset();
-        radio.receiveDirect();//reset IRQ flags
-        if(sa.haveDStarMsg())
-        {
-            auto m = sa.getDStarMsg();
-            Serial << "Msg:\"";
-            for(uint i = 0; i < 20; i++)
-            {
-                Serial << char(m[i]);
-            }
-            Serial << "\"" << endl;
-        }
-        sa.reset();
+        startRX();
     }
     if(bs.isEvenDataReady())
     {
