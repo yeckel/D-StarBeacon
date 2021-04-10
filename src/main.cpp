@@ -14,6 +14,7 @@
 #include <DSTAR.h>
 #include <SlowAmbe.h>
 #include <Scrambler.h>
+#include <BitSlicer.h>
 
 
 #define LORA_CS 18      // GPIO18 - SX1276 CS
@@ -47,6 +48,7 @@ void checkLoraState(int state)
 uint8_t preambleAndBitSync[] = {0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x76, 0x50};
 static constexpr uint16_t PREAMBLE_BITSIZE{sizeof(preambleAndBitSync) * 8};
 volatile uint preambleBitPos{0};
+uint8_t syncWord[] = {0xaa, 0xaa, 0xaa, 0xaa, 0xEC, 0xA0};
 uint8_t stoppingFrame[] = {0xaa, 0xaa, 0xaa, 0xaa, 0x13, 0x5e};
 static constexpr uint16_t STOPPING_FRAME_BITSIZE{sizeof(stoppingFrame) * 8};
 volatile uint stoppingFramePos{0};
@@ -65,32 +67,26 @@ uint8_t dStarHeader[DSTAR::RF_HEADER_SIZE] = {0x0, 0x0, 0x0, //flag 1,2,3
                                              };
 uint8_t headerTXBuffer[DSTAR::RF_HEADER_SIZE * 2];
 volatile uint headerBitPos{0};
+uint8_t history[DSTAR::RF_HEADER_SIZE * 8];  //buffer for viterbi decoding (large buffer need)
+uint8_t headerRXbuffer[DSTAR::RF_HEADER_SIZE];
 
-uint8_t slowAmbeData[SlowAmbe::SLOW_AMBE_SIZE] = {0x4d, 0xb2, 0x44, 0x12, 0x03, 0x68, 0x14, 0x64, 0x13, 0x66, 0x66, 0x66};//first 9 from real packet
+uint8_t payloadData[SlowAmbe::SLOW_AMBE_SIZE] = {0x4d, 0xb2, 0x44, 0x12, 0x03, 0x68, 0x14, 0x64, 0x13, 0x66, 0x66, 0x66};//first 9 from real packet
 
 SlowAmbe sa;
 DSTAR dStar;
+BitSlicer bs;
 
 volatile uint ambeDataBitPos{0};
 bool isFirstAmbe{true};
 volatile bool isPTTPressed{false};
 volatile bool stopTx{false};
 bool bluetoothXOFF{false};
+volatile bool inSync = false;
+volatile bool receivedPacket{false};
 
 float f = 434.800f + 0.0024f - 0.00091;
 
-void prepareHeader();
-
-void startTX()
-{
-    isPTTPressed = true;
-    prepareHeader();
-    sa.setMSG(DSTAR_MSG);
-    ambeDataBitPos = SlowAmbe::SLOW_AMBE_BITSIZE;//to run into data fetch immediately
-    checkLoraState(radio.transmitDirect());
-    Serial << "Start transmit" << endl;
-}
-
+//----------------------------------TX bit routines -----------------------
 void sendBit(uint8_t* sendBuff, uint buffBitPos)
 {
     auto bytePos = buffBitPos / 8;
@@ -119,7 +115,7 @@ void fetchNextPayloadData()
     uint32_t data;
     uint8_t* p_data{(uint8_t*)& data};
     sa.getNextData(data);
-    memcpy(slowAmbeData + 9, p_data, 3); //using just last 3 bytes in slowAmbeData and 3 first bytes from data
+    memcpy(payloadData + 9, p_data, 3); //using just last 3 bytes in slowAmbeData and 3 first bytes from data
     ambeDataBitPos = 0;
     isFirstAmbe = false;
 }
@@ -132,7 +128,7 @@ void sendPayloadBit()
         fetchNextPayloadData();
     }
     //        Serial << "A";
-    sendBit(slowAmbeData, ambeDataBitPos);
+    sendBit(payloadData, ambeDataBitPos);
     ambeDataBitPos++;
 }
 
@@ -143,7 +139,7 @@ void sendStoppingFrameBit()
     stoppingFramePos++;
 }
 
-void dataClk()
+void txBit()
 {
     if(preambleBitPos < PREAMBLE_BITSIZE)
     {
@@ -167,7 +163,43 @@ void dataClk()
         stopTx = true;
     }
 }
+//-------------------------------RX bit routines----------------------------------------
+void rxBit()
+{
+    auto receivedBit = digitalRead(LORA_IO2);
+    if(!inSync)
+    {
+        return;
+    }
+    //    Serial << receivedBit;
+    auto commStopped = bs.appendBit(receivedBit);
+    if(commStopped)
+    {
+        Serial << endl << "RX Stopped" << endl;
+        inSync = false;
+        digitalWrite(BUILTIN_LED, false);
+        receivedPacket = true;
+    }
+}
+//--------------------------------Interrupt handlers-------------------------------------
+void dataClockInterruptHandler()
+{
+    if(isPTTPressed)
+    {
+        txBit();
+    }
+    else
+    {
+        rxBit();
+    }
+}
 
+void receivedSyncWord(void)
+{
+    inSync = true;
+    Serial << __FUNCTION__ << endl;
+}
+//----------------------------------------------------------------------------------------
 void prepareHeader()
 {
     dStar.add_crc(dStarHeader);
@@ -176,6 +208,32 @@ void prepareHeader()
     dStar.pseudo_random(headerTXBuffer, DSTAR::RF_HEADER_TRANSFER_BITSIZE);
 }
 
+void decodeHeader(uint8_t* bufferConv)
+{
+    dStar.pseudo_random(bufferConv, 660);
+    dStar.deInterleave(bufferConv);
+    dStar.viterbi(bufferConv, history, headerRXbuffer); //decode data
+    Serial << endl;
+
+    Serial <<  endl <<  "Nb errors:";
+    Serial << int(dStar.acc_error[1][0]) << endl;    //print nb errors
+
+    Serial << "Checking crc: " << dStar.check_crc(headerRXbuffer) << endl;    //crc testing
+
+    Serial << endl << "RF Header:\"";
+    for(uint i = 0; i < sizeof(headerRXbuffer); i++)
+    {
+        if(headerRXbuffer[i] >= 0x20 && headerRXbuffer[i] <= 0x7F)
+        {
+            Serial << char(headerRXbuffer[i]);
+        }
+        else
+        {
+            Serial << "0x" << _HEX(headerRXbuffer[i]) << " ";
+        }
+    }
+    Serial << "\"" << endl;
+}
 void prepareDPRS(const String& data)
 {
     auto crc = dStar.calcCCITTCRC((uint8_t*)data.c_str(), 0, data.length());
@@ -183,11 +241,33 @@ void prepareDPRS(const String& data)
     Serial << dprs;
     sa.setDPRS((uint8_t*)dprs.c_str(), dprs.length());
 }
+
+void startTX()
+{
+    isPTTPressed = true;
+    prepareHeader();
+    sa.setMSG(DSTAR_MSG);
+    ambeDataBitPos = SlowAmbe::SLOW_AMBE_BITSIZE;//to run into data fetch immediately
+    radio.setDio0Action(nullptr);
+    checkLoraState(radio.transmitDirect());
+    Serial << __FUNCTION__ << endl;
+}
+void startRX()
+{
+    isPTTPressed = false;
+    radio.setDio0Action(receivedSyncWord);
+    checkLoraState(radio.enableOokBitSychronizer());
+    checkLoraState(radio.receiveDirect());
+    checkLoraState(radio.setSyncWord(syncWord, sizeof(syncWord)));
+    Serial << __FUNCTION__ << endl;
+}
+
 void setup()
 {
     Serial.begin(115200);
     gpsSerial.begin(9600, SERIAL_8N1, 12, 15);
     serialBT.begin("D-Star Beacon");
+    bs.setHeaderBuffer(headerRXbuffer, DSTAR::RF_HEADER_SIZE);//TODO refactore to constrctor
     radio.reset();
     Serial.print(F("[SX1278] Initializing ... "));
     pinMode(LORA_IO2, OUTPUT);
@@ -196,15 +276,15 @@ void setup()
     //    checkLoraState(radio.begin(f, 10.4));
     Serial << "Start FSK:" << endl;
     checkLoraState(radio.beginFSK(f, 4.8f, 4.8 * 0.25f, 25.0f, 4, 48, false));
-    //    MorseClient morse(&radio);
-    //    morse.begin(f);
-    //    morse.startSignal();
-    //    morse.print("001");
+    MorseClient morse(&radio);
+    morse.begin(f);
+    morse.startSignal();
+    morse.print("001");
     checkLoraState(radio.setEncoding(RADIOLIB_ENCODING_NRZ));
     checkLoraState(radio.setDataShaping(RADIOLIB_SHAPING_0_5));
-    attachInterrupt(LORA_IO1, dataClk, RISING);
+    radio.setDio1Action(dataClockInterruptHandler);
 
-    Serial << "Setup done!" << endl;
+    startRX();
 }
 
 String formatDPRSString(String callsign, double lat, double lon, int alt, String message)
@@ -232,6 +312,15 @@ String formatDPRSString(String callsign, double lat, double lon, int alt, String
 
 uint8_t lastSecond{0};
 uint8_t readBTByte{0};
+void resetTXData()
+{
+    preambleBitPos = 0;
+    headerBitPos = 0;
+    ambeDataBitPos = 0;
+    stoppingFramePos = 0;
+    isFirstAmbe = true;
+}
+
 void loop()
 {
     while(gpsSerial.available() > 0)
@@ -300,15 +389,42 @@ void loop()
 
     if(isPTTPressed && stopTx)
     {
-        Serial << "End TX" << endl;
-        isPTTPressed = false;
+        startRX();
         stopTx = false;
-        radio.standby();//TODO receive
-        preambleBitPos = 0;
-        headerBitPos = 0;
-        ambeDataBitPos = 0;
-        stoppingFramePos = 0;
-        isFirstAmbe = true;
+        resetTXData();
         sa.reset();
+    }
+
+    if(receivedPacket)
+    {
+        Serial << "fd: " << radio.getFrequencyError(true) << endl;
+        if(bs.haveHeader())
+        {
+            decodeHeader(headerRXbuffer);
+        }
+        receivedPacket = false;
+        bs.reset();
+        radio.receiveDirect();//reset IRQ flags
+        if(sa.haveDStarMsg())
+        {
+            auto m = sa.getDStarMsg();
+            Serial << "Msg:\"";
+            for(uint i = 0; i < 20; i++)
+            {
+                Serial << char(m[i]);
+            }
+            Serial << "\"" << endl;
+        }
+        sa.reset();
+    }
+    if(bs.isEvenDataReady())
+    {
+        auto data = bs.getEvenData();
+        sa.receiveData(data + 9);
+    }
+    if(bs.isOddDataReady())
+    {
+        auto data = bs.getOddData();
+        sa.receiveData(data + 9);
     }
 }

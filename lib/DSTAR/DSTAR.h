@@ -19,8 +19,8 @@
 class DSTAR
 {
 public:
-    static constexpr uint16_t RF_HEADER_SIZE{42};//in real data(39)+crc(2)+1 padding
-    static constexpr uint16_t RF_HEADER_TRANSFER_BITSIZE{660};
+    static constexpr uint16_t RF_HEADER_SIZE{42u};//in real data(39)+crc(2)+1 padding
+    static constexpr uint16_t RF_HEADER_TRANSFER_BITSIZE{660u};
     void convolution(byte* input, byte* output);
 
 
