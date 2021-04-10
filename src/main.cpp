@@ -87,6 +87,7 @@ float f = 434.800f + 0.00244f;//t-beam sx1278 has XTAL offset
 
 bool isGPSValid{false};
 bool isBTConnected{false};
+bool receivedValidRFHeader{false};
 
 void repaintDisplay()
 {
@@ -98,10 +99,30 @@ void repaintDisplay()
     display.drawString(90, 0, isGPSValid ? "GPS" : "gps");
     display.drawString(115, 0, isBTConnected ? "BT" : "bt");
     display.drawLine(0, 32, 128, 32);
+    char buffHeader[10];
+    if(receivedValidRFHeader)
+    {
+        //callsign
+        memcpy(buffHeader, dStarRxHeaderData + 27, 8);
+        buffHeader[8] = 0x00;
+        display.drawStringf(0, 33, buff, "Cs:%s", buffHeader);
+        //rig
+        memcpy(buffHeader, dStarRxHeaderData + 35, 4);
+        buffHeader[4] = 0x00;
+        display.drawStringf(65, 33, buff, "Rig:%s", buffHeader);
+        //dst
+        memcpy(buffHeader, dStarRxHeaderData + 3, 8);
+        buffHeader[8] = 0x00;
+        display.drawStringf(0, 43, buff, "Ds:%s", buffHeader);
+        //companion
+        memcpy(buffHeader, dStarRxHeaderData + 19, 8);
+        buffHeader[8] = 0x00;
+        display.drawStringf(65, 43, buff, "Cc:%s", buffHeader);
+    }
     if(sa.haveDStarMsg())
     {
         auto m = (const char*)sa.getDStarMsg();
-        display.drawStringf(0, 54, buff, "Msg:%s", m);
+        display.drawStringf(0, 52, buff, "Msg:%s", m);
     }
     display.display();
 }
@@ -214,26 +235,30 @@ void decodeHeader(uint8_t* bufferConv)
     dStar.pseudo_random(bufferConv, 660);
     dStar.deInterleave(bufferConv);
     dStar.viterbi(bufferConv, history, dStarRxHeaderData); //decode data
-    Serial << endl;
 
-    Serial <<  endl <<  "Nb errors:";
+    Serial << "Nb errors:";
     Serial << int(dStar.acc_error[1][0]) << endl;    //print nb errors
 
-    Serial << "Checking crc: " << dStar.check_crc(dStarRxHeaderData) << endl;    //crc testing
+    auto isCrcFine = dStar.check_crc(dStarRxHeaderData);
+    Serial << "Checking crc: " << isCrcFine << endl;    //crc testing
 
-    Serial << endl << "RF Header:\"";
-    for(uint i = 0; i < sizeof(dStarRxHeaderData); i++)
+    if(isCrcFine)
     {
-        if(dStarRxHeaderData[i] >= 0x20 && dStarRxHeaderData[i] <= 0x7F)
+        receivedValidRFHeader = true;
+        Serial << endl << "RF Header:\"";
+        for(uint i = 0; i < sizeof(dStarRxHeaderData); i++)
         {
-            Serial << char(dStarRxHeaderData[i]);
+            if(dStarRxHeaderData[i] >= 0x20 && dStarRxHeaderData[i] <= 0x7F)
+            {
+                Serial << char(dStarRxHeaderData[i]);
+            }
+            else
+            {
+                Serial << "0x" << _HEX(dStarRxHeaderData[i]) << " ";
+            }
         }
-        else
-        {
-            Serial << "0x" << _HEX(dStarRxHeaderData[i]) << " ";
-        }
+        Serial << "\"" << endl;
     }
-    Serial << "\"" << endl;
 }
 void prepareDPRS(const String& data)
 {
