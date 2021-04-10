@@ -56,19 +56,20 @@ uint8_t plainDataBTRXBuff[5];
 
 uint8_t DSTAR_MSG[SlowAmbe::DSTAR_MSG_SIZE] = {'D', '-', 'S', 't', 'a', 'r', ' ', 'b', 'e', 'a', 'c', 'o', 'n', ' ', 'e', 's', 'p', '3', '2', '!'};
 
-uint8_t dStarHeader[DSTAR::RF_HEADER_SIZE] = {0x0, 0x0, 0x0, //flag 1,2,3
-                                              0x44, 0x49, 0x52, 0x45, 0x43, 0x54, 0x20, 0x20, //destination callsign
-                                              0x44, 0x49, 0x52, 0x45, 0x43, 0x54, 0x20, 0x20, //repeater callsign
-                                              0x43, 0x51, 0x43, 0x51, 0x43, 0x51, 0x20, 0x20, //companion callsign
-                                              'O', 'K', '1', 'C', 'H', 'P', 0x20, 0x20, //own callsign
-                                              '7', '0', '5', ' ', //rig ID
-                                              0x00, 0x00, //place for CRC
-                                              0x0 //padding
-                                             };
-uint8_t headerTXBuffer[DSTAR::RF_HEADER_SIZE * 2];
+uint8_t dStarTxHeaderData[DSTAR::RF_HEADER_SIZE] = {0x0, 0x0, 0x0, //flag 1,2,3
+                                                    0x44, 0x49, 0x52, 0x45, 0x43, 0x54, 0x20, 0x20, //destination callsign
+                                                    0x44, 0x49, 0x52, 0x45, 0x43, 0x54, 0x20, 0x20, //repeater callsign
+                                                    0x43, 0x51, 0x43, 0x51, 0x43, 0x51, 0x20, 0x20, //companion callsign
+                                                    'O', 'K', '1', 'C', 'H', 'P', 0x20, 0x20, //own callsign
+                                                    '7', '0', '5', ' ', //rig ID
+                                                    0x00, 0x00, //place for CRC
+                                                    0x0 //padding
+                                                   };
+uint8_t dStarRxHeaderData[DSTAR::RF_HEADER_SIZE];
+
+uint8_t headerRXTXBuffer[DSTAR::RF_HEADER_SIZE * 2];
 volatile uint headerBitPos{0};
 uint8_t history[DSTAR::RF_HEADER_SIZE * 8];  //buffer for viterbi decoding (large buffer need)
-uint8_t headerRXbuffer[DSTAR::RF_HEADER_SIZE];
 
 uint8_t payloadData[SlowAmbe::SLOW_AMBE_SIZE] = {0x4d, 0xb2, 0x44, 0x12, 0x03, 0x68, 0x14, 0x64, 0x13, 0x66, 0x66, 0x66};//first 9 from real packet
 
@@ -84,7 +85,7 @@ bool bluetoothXOFF{false};
 volatile bool inSync = false;
 volatile bool receivedPacket{false};
 
-float f = 434.800f + 0.0024f - 0.00091;
+float f = 434.800f + 0.00244f;//t-beam sx1278 has XTAL offset
 
 //----------------------------------TX bit routines -----------------------
 void sendBit(uint8_t* sendBuff, uint buffBitPos)
@@ -106,7 +107,7 @@ void sendPreambleBit()
 void sendHeaderBit()
 {
     //        Serial << "H";
-    sendBit(headerTXBuffer, headerBitPos);
+    sendBit(headerRXTXBuffer, headerBitPos);
     headerBitPos++;
 }
 
@@ -202,34 +203,34 @@ void receivedSyncWord(void)
 //----------------------------------------------------------------------------------------
 void prepareHeader()
 {
-    dStar.add_crc(dStarHeader);
-    dStar.convolution(dStarHeader, headerTXBuffer);   //source, dest
-    dStar.interleave(headerTXBuffer);
-    dStar.pseudo_random(headerTXBuffer, DSTAR::RF_HEADER_TRANSFER_BITSIZE);
+    dStar.add_crc(dStarTxHeaderData);
+    dStar.convolution(dStarTxHeaderData, headerRXTXBuffer);   //source, dest
+    dStar.interleave(headerRXTXBuffer);
+    dStar.pseudo_random(headerRXTXBuffer, DSTAR::RF_HEADER_TRANSFER_BITSIZE);
 }
 
 void decodeHeader(uint8_t* bufferConv)
 {
     dStar.pseudo_random(bufferConv, 660);
     dStar.deInterleave(bufferConv);
-    dStar.viterbi(bufferConv, history, headerRXbuffer); //decode data
+    dStar.viterbi(bufferConv, history, dStarRxHeaderData); //decode data
     Serial << endl;
 
     Serial <<  endl <<  "Nb errors:";
     Serial << int(dStar.acc_error[1][0]) << endl;    //print nb errors
 
-    Serial << "Checking crc: " << dStar.check_crc(headerRXbuffer) << endl;    //crc testing
+    Serial << "Checking crc: " << dStar.check_crc(dStarRxHeaderData) << endl;    //crc testing
 
     Serial << endl << "RF Header:\"";
-    for(uint i = 0; i < sizeof(headerRXbuffer); i++)
+    for(uint i = 0; i < sizeof(dStarRxHeaderData); i++)
     {
-        if(headerRXbuffer[i] >= 0x20 && headerRXbuffer[i] <= 0x7F)
+        if(dStarRxHeaderData[i] >= 0x20 && dStarRxHeaderData[i] <= 0x7F)
         {
-            Serial << char(headerRXbuffer[i]);
+            Serial << char(dStarRxHeaderData[i]);
         }
         else
         {
-            Serial << "0x" << _HEX(headerRXbuffer[i]) << " ";
+            Serial << "0x" << _HEX(dStarRxHeaderData[i]) << " ";
         }
     }
     Serial << "\"" << endl;
@@ -267,19 +268,18 @@ void setup()
     Serial.begin(115200);
     gpsSerial.begin(9600, SERIAL_8N1, 12, 15);
     serialBT.begin("D-Star Beacon");
-    bs.setHeaderBuffer(headerRXbuffer, DSTAR::RF_HEADER_SIZE);//TODO refactore to constrctor
+    sa.setDataOutput(&serialBT);
+    bs.setHeaderBuffer(headerRXTXBuffer, DSTAR::RF_HEADER_SIZE * 2); //TODO refactore to constrctor
     radio.reset();
     Serial.print(F("[SX1278] Initializing ... "));
     pinMode(LORA_IO2, OUTPUT);
     pinMode(LORA_IO1, INPUT);
-
-    //    checkLoraState(radio.begin(f, 10.4));
     Serial << "Start FSK:" << endl;
     checkLoraState(radio.beginFSK(f, 4.8f, 4.8 * 0.25f, 25.0f, 4, 48, false));
-    MorseClient morse(&radio);
-    morse.begin(f);
-    morse.startSignal();
-    morse.print("001");
+    //    MorseClient morse(&radio);
+    //    morse.begin(f);
+    //    morse.startSignal();
+    //    morse.print("001");
     checkLoraState(radio.setEncoding(RADIOLIB_ENCODING_NRZ));
     checkLoraState(radio.setDataShaping(RADIOLIB_SHAPING_0_5));
     radio.setDio1Action(dataClockInterruptHandler);
@@ -400,7 +400,7 @@ void loop()
         Serial << "fd: " << radio.getFrequencyError(true) << endl;
         if(bs.haveHeader())
         {
-            decodeHeader(headerRXbuffer);
+            decodeHeader(headerRXTXBuffer);
         }
         receivedPacket = false;
         bs.reset();
