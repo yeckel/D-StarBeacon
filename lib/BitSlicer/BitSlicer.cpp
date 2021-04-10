@@ -13,7 +13,7 @@ bool BitSlicer::appendBit(bool bit)
     auto atEnd = tailMatcher.appendAndCheck(bit);
     if(atEnd)
     {
-        Serial << "At end";
+        //        Serial << "At end";
         return true;
     }
     receivedByte = (receivedByte & ~(1UL << bitInRxByte)) | (bit << bitInRxByte);
@@ -52,7 +52,7 @@ bool BitSlicer::appendBit(bool bit)
                     receivedAmbeByteNr = 0;
                     if(!isSyncVrame)
                     {
-                        Serial << endl << "Sync frame" << endl;
+                        //                        Serial << endl << "Sync frame" << endl;
                         return true;
                     }
                 }

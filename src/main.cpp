@@ -97,13 +97,11 @@ void repaintDisplay()
     display.drawString(20, 0, buff);
     display.drawString(90, 0, isGPSValid ? "GPS" : "gps");
     display.drawString(115, 0, isBTConnected ? "BT" : "bt");
-    display.drawString(0, 30, "Msg:");
+    display.drawLine(0, 32, 128, 32);
     if(sa.haveDStarMsg())
     {
-        //        auto m = (const char*)sa.getDStarMsg();
-        //        String msg{m};
-        Serial << "Msg:";
-        //display.drawString(20, 30, msg);
+        auto m = (const char*)sa.getDStarMsg();
+        display.drawStringf(0, 54, buff, "Msg:%s", m);
     }
     display.display();
 }
@@ -192,7 +190,6 @@ void rxBit()
     auto commStopped = bs.appendBit(receivedBit);
     if(commStopped)
     {
-        Serial << endl << "RX Stopped" << endl;
         radio.clearDio1Action();
         receivedPacket = true;
     }
@@ -285,10 +282,9 @@ void setup()
     display.setFont(ArialMT_Plain_10);
     bs.setHeaderBuffer(headerRXTXBuffer, DSTAR::RF_HEADER_SIZE * 2); //TODO refactore to constrctor
     radio.reset();
-    Serial.print(F("[SX1278] Initializing ... "));
+    Serial.print(F("Initializing ... "));
     pinMode(LORA_IO2, OUTPUT);
     pinMode(LORA_IO1, INPUT);
-    Serial << "Start FSK:" << endl;
     checkLoraState(radio.beginFSK(f, 4.8f, 4.8 * 0.25f, 25.0f, 4, 48, false));
     //    MorseClient morse(&radio);
     //    morse.begin(f);
@@ -420,6 +416,7 @@ void loop()
 
     if(receivedPacket)
     {
+        Serial << endl << "RX Stopped" << endl;
         receivedPacket = false;
         radio.receiveDirect();//reset IRQ flags
         repaintDisplay();
