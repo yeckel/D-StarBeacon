@@ -47,7 +47,7 @@ void checkLoraState(int state)
 uint8_t preambleAndBitSync[] = {0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x76, 0x50};
 static constexpr uint16_t PREAMBLE_BITSIZE{sizeof(preambleAndBitSync) * 8};
 volatile uint preambleBitPos{0};
-uint8_t syncWord[] = {0xaa, 0xaa, 0xaa, 0xaa, 0xEC, 0xA0};
+uint8_t syncWord[] = {0x55, 0x55, 0x55, 0x55, 0x55, 0x76, 0x50};
 uint8_t stoppingFrame[] = {0xaa, 0xaa, 0xaa, 0xaa, 0x13, 0x5e};
 static constexpr uint16_t STOPPING_FRAME_BITSIZE{sizeof(stoppingFrame) * 8};
 volatile uint stoppingFramePos{0};
@@ -81,7 +81,6 @@ bool isFirstAmbe{true};
 volatile bool isPTTPressed{false};
 volatile bool stopTx{false};
 bool bluetoothXOFF{false};
-volatile bool inSync{false};
 volatile bool receivedPacket{false};
 
 float f = 434.800f + 0.00244f;//t-beam sx1278 has XTAL offset
@@ -190,7 +189,6 @@ void txBit()
 void rxBit()
 {
     auto receivedBit = digitalRead(LORA_IO2);
-    //    Serial << receivedBit;
     auto commStopped = bs.appendBit(receivedBit);
     if(commStopped)
     {
@@ -199,6 +197,7 @@ void rxBit()
         receivedPacket = true;
     }
 }
+//--------------------------------Interrupt handler-------------------------------------
 
 void receivedSyncWord(void)
 {
@@ -259,6 +258,7 @@ void startTX()
     radio.clearDio0Action();
     radio.setDio1Action(txBit);
     checkLoraState(radio.transmitDirect());
+    radio.setDio1Action(txBit);
     Serial << __FUNCTION__ << endl;
 }
 void startRX()
@@ -296,7 +296,6 @@ void setup()
     //    morse.print("001");
     checkLoraState(radio.setEncoding(RADIOLIB_ENCODING_NRZ));
     checkLoraState(radio.setDataShaping(RADIOLIB_SHAPING_0_5));
-    checkLoraState(radio.enableOokBitSychronizer());
     checkLoraState(radio.setSyncWord(syncWord, sizeof(syncWord)));
 
     startRX();
