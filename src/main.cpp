@@ -36,11 +36,7 @@ TaskHandle_t BeaconSenderHandler;
 
 void checkLoraState(int state)
 {
-    if(state == ERR_NONE)
-    {
-        Serial.println(F("success!"));
-    }
-    else
+    if(state != ERR_NONE)
     {
         Serial.print(F("failed, code "));
         Serial.println(state);
@@ -77,6 +73,7 @@ volatile uint ambeDataBitPos{0};
 bool isFirstAmbe{true};
 volatile bool isPTTPressed{false};
 volatile bool stopTx{false};
+bool bluetoothXOFF{false};
 
 float f = 434.800f + 0.0024f - 0.00091;
 
@@ -111,7 +108,7 @@ void dataClk()
     }
     else if(headerBitPos < 660)
     {
-        Serial << "H";
+        //        Serial << "H";
         sendBit(headerTXBuffer, headerBitPos);
         headerBitPos++;
     }
@@ -128,13 +125,13 @@ void dataClk()
             ambeDataBitPos = 0;
             isFirstAmbe = false;
         }
-        Serial << "A";
+        //        Serial << "A";
         sendBit(slowAmbeData, ambeDataBitPos);
         ambeDataBitPos++;
     }
     else if(stoppingFramePos < sizeof(stoppingFrame) * 8)
     {
-        Serial << "S";
+        //        Serial << "S";
         sendBit(stoppingFrame, stoppingFramePos);
         stoppingFramePos++;
     }
@@ -224,17 +221,26 @@ void loop()
         gps.encode(ch);
     }
 
-    if(!sa.comBuffer.isFull())
+    if(!sa.isBufferFull())
     {
+        //if at least half the buffer capacity is empty, request more data
+        if(isPTTPressed &&
+           sa.isHalfBufferEmpty() &&
+           bluetoothXOFF)
+        {
+            bluetoothXOFF = false;
+            serialBT.write(0x11);//XON
+            //            Serial << "TX buffer is ready:" << sa.comBuffer.size() << endl;
+        }
         while(serialBT.available() > 0)
         {
             auto ch = serialBT.read();
-            Serial << "0x" << _HEX(ch) << ", ";
+            ///Serial << "0x" << _HEX(ch) << ", ";
             plainDataBTRXBuff[readBTByte] = ch;
             readBTByte++;
             if(readBTByte == sizeof(plainDataBTRXBuff))
             {
-                Serial << "Adding: 5 " << endl;
+                //                Serial << "Adding: 5 " << endl;
                 sa.setDPRS(plainDataBTRXBuff, sizeof(plainDataBTRXBuff));
                 readBTByte = 0;
                 break;
@@ -242,14 +248,19 @@ void loop()
         }
         if(readBTByte != 0)
         {
-            Serial << "Adding: " << uint(readBTByte) << endl;
+            //            Serial << "Adding: " << uint(readBTByte) << endl;
             sa.setDPRS(plainDataBTRXBuff, readBTByte);
             readBTByte = 0;
         }
     }
     else
     {
-        Serial << "TX buffer is full!!" << endl;
+        if(!bluetoothXOFF)
+        {
+            //            Serial << "TX buffer is full!!:" << sa.comBuffer.size() << endl;
+            serialBT.write(0x13);//XOFF
+            bluetoothXOFF = true;
+        }
     }
     //    if(gps.time.isUpdated())
     //    {
