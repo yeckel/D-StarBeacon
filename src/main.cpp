@@ -45,8 +45,10 @@ void checkLoraState(int state)
 }
 
 uint8_t preambleAndBitSync[] = {0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x76, 0x50};
+static constexpr uint16_t PREAMBLE_BITSIZE{sizeof(preambleAndBitSync) * 8};
 volatile uint preambleBitPos{0};
 uint8_t stoppingFrame[] = {0xaa, 0xaa, 0xaa, 0xaa, 0x13, 0x5e};
+static constexpr uint16_t STOPPING_FRAME_BITSIZE{sizeof(stoppingFrame) * 8};
 volatile uint stoppingFramePos{0};
 uint8_t plainDataBTRXBuff[5];
 
@@ -98,53 +100,71 @@ void sendBit(uint8_t* sendBuff, uint buffBitPos)
     digitalWrite(LORA_IO2, bit);
 }
 
+void sendPreambleBit()
+{
+    //        Serial << "P";
+    sendBit(preambleAndBitSync, preambleBitPos);
+    preambleBitPos++;
+}
+
+void sendHeaderBit()
+{
+    //        Serial << "H";
+    sendBit(headerTXBuffer, headerBitPos);
+    headerBitPos++;
+}
+
+void fetchNextPayloadData()
+{
+    uint32_t data;
+    uint8_t* p_data{(uint8_t*)& data};
+    sa.getNextData(data);
+    memcpy(slowAmbeData + 9, p_data, 3); //using just last 3 bytes in slowAmbeData and 3 first bytes from data
+    ambeDataBitPos = 0;
+    isFirstAmbe = false;
+}
+
+void sendPayloadBit()
+{
+    if(ambeDataBitPos == SlowAmbe::SLOW_AMBE_BITSIZE ||
+       isFirstAmbe)
+    {
+        fetchNextPayloadData();
+    }
+    //        Serial << "A";
+    sendBit(slowAmbeData, ambeDataBitPos);
+    ambeDataBitPos++;
+}
+
+void sendStoppingFrameBit()
+{
+    //        Serial << "S";
+    sendBit(stoppingFrame, stoppingFramePos);
+    stoppingFramePos++;
+}
+
 void dataClk()
 {
-    if(preambleBitPos < sizeof(preambleAndBitSync) * 8)
+    if(preambleBitPos < PREAMBLE_BITSIZE)
     {
-        //        Serial << "P";
-        sendBit(preambleAndBitSync, preambleBitPos);
-        preambleBitPos++;
+        sendPreambleBit();
     }
-    else if(headerBitPos < 660)
+    else if(headerBitPos < DSTAR::RF_HEADER_TRANSFER_BITSIZE)
     {
-        //        Serial << "H";
-        sendBit(headerTXBuffer, headerBitPos);
-        headerBitPos++;
+        sendHeaderBit();
     }
     else if(!sa.comBuffer.isEmpty() ||
             ambeDataBitPos < SlowAmbe::SLOW_AMBE_BITSIZE)
     {
-        if(ambeDataBitPos == SlowAmbe::SLOW_AMBE_BITSIZE ||
-           isFirstAmbe)
-        {
-            uint32_t data;
-            uint8_t* p_data{(uint8_t*)& data};
-            sa.getNextData(data);
-            memcpy(slowAmbeData + 9, p_data, 3); //using just last 3 bytes in slowAmbeData and 3 first bytes from data
-            ambeDataBitPos = 0;
-            isFirstAmbe = false;
-        }
-        //        Serial << "A";
-        sendBit(slowAmbeData, ambeDataBitPos);
-        ambeDataBitPos++;
+        sendPayloadBit();
     }
-    else if(stoppingFramePos < sizeof(stoppingFrame) * 8)
+    else if(stoppingFramePos < STOPPING_FRAME_BITSIZE)
     {
-        //        Serial << "S";
-        sendBit(stoppingFrame, stoppingFramePos);
-        stoppingFramePos++;
+        sendStoppingFrameBit();
     }
     else
     {
         stopTx = true;
-    }
-}
-void print_data(byte* data, int dataSize)
-{
-    for(int n = 0; n < dataSize; n++)
-    {
-        Serial << "0x" << _HEX(data[n]) << ",";
     }
 }
 
@@ -153,7 +173,7 @@ void prepareHeader()
     dStar.add_crc(dStarHeader);
     dStar.convolution(dStarHeader, headerTXBuffer);   //source, dest
     dStar.interleave(headerTXBuffer);
-    dStar.pseudo_random(headerTXBuffer, 660);
+    dStar.pseudo_random(headerTXBuffer, DSTAR::RF_HEADER_TRANSFER_BITSIZE);
 }
 
 void prepareDPRS(const String& data)
@@ -214,7 +234,6 @@ uint8_t lastSecond{0};
 uint8_t readBTByte{0};
 void loop()
 {
-    //    beaconSender();
     while(gpsSerial.available() > 0)
     {
         auto ch = gpsSerial.read();
