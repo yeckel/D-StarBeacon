@@ -19,7 +19,7 @@ public:
     void receiveData(uint8_t* buff);
     void reset();
     const uint8_t* getDStarMsg();
-    void setMSG(uint8_t* msg);
+    void setMSG(const String& msg);
     void setDPRS(uint8_t* msg, uint size);
     void getNextData(uint32_t& data);
     bool haveDStarMsg() const
