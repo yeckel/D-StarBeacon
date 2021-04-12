@@ -3,18 +3,20 @@
 #include <SSD1306Wire.h>
 #include <RadioLib.h>
 #include <TinyGPS++.h>
-#include <time.h>
-#include <sys/time.h>
 #include <BluetoothSerial.h>
 #include <pins_arduino.h>
 #include <Streaming.h>
 #include <axp20x.h>
-#include <TimeLib.h>
 #include <SPI.h>
 #include <DSTAR.h>
 #include <SlowAmbe.h>
 #include <Scrambler.h>
 #include <BitSlicer.h>
+#include <WiFi.h>
+#include <ESPAsyncWebServer.h>
+#include <SPIFFS.h>
+#include <ESPmDNS.h>
+
 
 
 #define LORA_CS 18      // GPIO18 - SX1276 CS
@@ -33,6 +35,7 @@ TinyGPSPlus gps;
 HardwareSerial gpsSerial(1);
 BluetoothSerial serialBT;
 AXP20X_Class axp;
+AsyncWebServer server(80);
 
 void checkLoraState(int state)
 {
@@ -43,6 +46,20 @@ void checkLoraState(int state)
         while(true);
     }
 }
+
+struct BeaconConfig
+{
+    // hardware configuration
+    int wifi;				// connect to known WLAN 0=skip
+    String ipaddr{"0.0.0.0"};
+    String callsign{"MY0CALL"};
+    String dStarMsg{"D-Star Beacon"};
+    String dprsMsg{"ESP32 D-Star Beacon"};
+    float qrt{434.800f + 0.00244f};
+    bool isBeaconEnabled{false};
+};
+
+BeaconConfig config;
 
 uint8_t preambleAndBitSync[] = {0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x76, 0x50};
 static constexpr uint16_t PREAMBLE_BITSIZE{sizeof(preambleAndBitSync) * 8};
@@ -83,21 +100,112 @@ volatile bool stopTx{false};
 bool bluetoothXOFF{false};
 volatile bool receivedPacket{false};
 
-float f = 434.800f + 0.00244f;//t-beam sx1278 has XTAL offset
-
 bool isGPSValid{false};
 bool isBTConnected{false};
 bool receivedValidRFHeader{false};
 
+// Read line from file, independent of line termination (LF or CR LF)
+String readLine(Stream& stream)
+{
+    String s = stream.readStringUntil('\n');
+    int len = s.length();
+    if(len == 0)
+    {
+        return s;
+    }
+    if(s.charAt(len - 1) == '\r')
+    {
+        s.remove(len - 1);
+    }
+    return s;
+}
+
+void setConfig(const char* cfg)
+{
+    while(*cfg == ' ' || *cfg == '\t')
+    {
+        cfg++;
+    }
+    if(*cfg == '#')
+    {
+        return;
+    }
+    char* s = strchr(cfg, '=');
+    if(!s)
+    {
+        return;
+    }
+    char* val = s + 1;
+    *s = 0;
+    s--;
+    while(s > cfg && (*s == ' ' || *s == '\t'))
+    {
+        *s = 0;
+        s--;
+    }
+    Serial.printf("configuration option '%s'=%s \n", cfg, val);
+    if(strcmp(cfg, "call") == 0)
+    {
+        config.callsign = String(val);
+        return;
+    }
+    if(strcmp(cfg, "dStarMsg") == 0)
+    {
+        config.dStarMsg = String(val);
+        return;
+    }
+    if(strcmp(cfg, "dprsMsg") == 0)
+    {
+        config.dprsMsg = String(val);
+        return;
+    }
+    if(strcmp(cfg, "QRT") == 0)
+    {
+        auto freq = String(val).toFloat();
+        if(freq == 0.0f)
+        {
+            Serial << "Invalid frequency:" << val << endl;
+        }
+        else
+        {
+            config.qrt = freq;
+        }
+        return;
+    }
+    if(strcmp(cfg, "BeaconEnabled") == 0 &&
+       strcmp(val, "true") == 0)
+    {
+        config.isBeaconEnabled = true;
+        return;
+    }
+    Serial.printf("Invalid config option '%s'=%s \n", cfg, val);
+}
+void readConfig()
+{
+    File file = SPIFFS.open("/config.txt", "r");
+    if(!file)
+    {
+        Serial << "Error opening the file '/config.txt' for reading" << endl;
+        return;
+    }
+    Serial << "Reading channel config:" << endl;
+    while(file.available())
+    {
+        String line = readLine(file);
+        setConfig(line.c_str());
+    }
+}
 void repaintDisplay()
 {
     display.clear();
     display.drawString(0, 0, isPTTPressed ? "TX" : "RX");
     char buff[100];
-    sprintf(buff, "f:%7.3fMHz", f);
+    sprintf(buff, "f:%7.3fMHz", config.qrt);
     display.drawString(20, 0, buff);
     display.drawString(90, 0, isGPSValid ? "GPS" : "gps");
     display.drawString(115, 0, isBTConnected ? "BT" : "bt");
+    display.drawString(0, 10, "IP:" + config.ipaddr);
+    display.drawString(60, 10, "CS:" + config.callsign);
     display.drawLine(0, 32, 128, 32);
     char buffHeader[10];
     if(receivedValidRFHeader)
@@ -294,6 +402,500 @@ void startRX()
     Serial << __FUNCTION__ << endl;
 }
 
+// Replaces placeholder with LED state value
+String processor(const String& var)
+{
+    Serial.println(var);
+    if(var == "CALLSIGN")
+    {
+        return String("OK1CHP");
+    }
+    return String();
+}
+
+void SetupAsyncServer()
+{
+    Serial << __FUNCTION__ << endl;
+    server.reset();
+    // Route for root / web page
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest * request)
+    {
+        request->send(SPIFFS, "/index.html", String(), false, processor);
+    });
+
+    server.on("/index.html", HTTP_GET, [](AsyncWebServerRequest * request)
+    {
+        request->send(SPIFFS, "/index.html", String(), false, processor);
+    });
+    server.onNotFound([](AsyncWebServerRequest * request)
+    {
+        if(request->method() == HTTP_OPTIONS)
+        {
+            request->send(200);
+        }
+        else
+        {
+            request->send(404);
+        }
+    });
+
+    // Start server
+    server.begin();
+}
+
+/////////////////// Functions for reading/writing Wifi networks from networks.txt
+
+#define MAX_WIFI 10
+int nNetworks;
+struct
+{
+    String id;
+    String pw;
+} networks[MAX_WIFI];
+
+// FIXME: For now, we don't uspport wifi networks that contain newline or null characters
+// ... would require a more sophisicated file format (currently one line SSID; one line Password
+void setupWifiList()
+{
+    File file = SPIFFS.open("/networks.txt", "r");
+    if(!file)
+    {
+        Serial.println("There was an error opening the file '/networks.txt' for reading");
+        networks[0].id = "RDZsonde";
+        networks[0].pw = "RDZsonde";
+        return;
+    }
+    int i = 0;
+
+    while(file.available())
+    {
+        String line = readLine(file);  //file.readStringUntil('\n');
+        if(!file.available())
+        {
+            break;
+        }
+        networks[i].id = line;
+        networks[i].pw = readLine(file); // file.readStringUntil('\n');
+        i++;
+    }
+    nNetworks = i;
+    Serial.print(i);
+    Serial.println(" networks in networks.txt\n");
+    for(int j = 0; j < i; j++)
+    {
+        Serial.print(networks[j].id);
+        Serial.print(": ");
+        Serial.println(networks[j].pw);
+    }
+}
+
+int fetchWifiIndex(const char* id)
+{
+    for(int i = 0; i < nNetworks; i++)
+    {
+        if(strcmp(id, networks[i].id.c_str()) == 0)
+        {
+            Serial.printf("Match for %s at %d\n", id, i);
+            return i;
+        }
+        //Serial.printf("No match: '%s' vs '%s'\n", id, networks[i].id.c_str());
+        const char* cfgid = networks[i].id.c_str();
+        auto len = strlen(cfgid);
+        if(strlen(id) > len)
+        {
+            len = strlen(id);
+        }
+    }
+    return -1;
+}
+
+const char* fetchWifiSSID(int i)
+{
+    return networks[i].id.c_str();
+}
+const char* fetchWifiPw(int i)
+{
+    return networks[i].pw.c_str();
+}
+
+const char* fetchWifiPw(const char* id)
+{
+    for(int i = 0; i < nNetworks; i++)
+    {
+        //Serial.print("Comparing '");
+        //Serial.print(id);
+        //Serial.print("' and '");
+        //Serial.print(networks[i].id.c_str());
+        //Serial.println("'");
+        if(strcmp(id, networks[i].id.c_str()) == 0)
+        {
+            return networks[i].pw.c_str();
+        }
+    }
+    return NULL;
+}
+
+void enableNetwork(bool enable)
+{
+    if(enable)
+    {
+        MDNS.begin("D-Star Beacon");
+        SetupAsyncServer();
+        MDNS.addService("http", "tcp", 80);
+        //connected = true;
+    }
+}
+
+enum t_wifi_state { WIFI_DISABLED, WIFI_SCAN, WIFI_CONNECT, WIFI_CONNECTED, WIFI_APMODE };
+
+static t_wifi_state wifi_state = WIFI_DISABLED;
+
+// Events used only for debug output right now
+void WiFiEvent(WiFiEvent_t event)
+{
+    Serial.printf("[WiFi-event] event: %d\n", event);
+
+    switch(event)
+    {
+    case SYSTEM_EVENT_WIFI_READY:
+        Serial.println("WiFi interface ready");
+        break;
+    case SYSTEM_EVENT_SCAN_DONE:
+        Serial.println("Completed scan for access points");
+        break;
+    case SYSTEM_EVENT_STA_START:
+        Serial.println("WiFi client started");
+        break;
+    case SYSTEM_EVENT_STA_STOP:
+        Serial.println("WiFi clients stopped");
+        break;
+    case SYSTEM_EVENT_STA_CONNECTED:
+        Serial.println("Connected to access point");
+        break;
+    case SYSTEM_EVENT_STA_DISCONNECTED:
+        Serial.println("Disconnected from WiFi access point");
+        if(wifi_state == WIFI_CONNECT)
+        {
+            // If we get a disconnect event while waiting for connection (as I do sometimes with my FritzBox),
+            // just start from scratch with WiFi scan
+            wifi_state = WIFI_DISABLED;
+            WiFi.disconnect(true);
+        }
+        break;
+    case SYSTEM_EVENT_STA_AUTHMODE_CHANGE:
+        Serial.println("Authentication mode of access point has changed");
+        break;
+    case SYSTEM_EVENT_STA_GOT_IP:
+        Serial.print("Obtained IP address: ");
+        Serial.println(WiFi.localIP());
+        break;
+    case SYSTEM_EVENT_STA_LOST_IP:
+        Serial.println("Lost IP address and IP address is reset to 0");
+        break;
+    case SYSTEM_EVENT_STA_WPS_ER_SUCCESS:
+        Serial.println("WiFi Protected Setup (WPS): succeeded in enrollee mode");
+        break;
+    case SYSTEM_EVENT_STA_WPS_ER_FAILED:
+        Serial.println("WiFi Protected Setup (WPS): failed in enrollee mode");
+        break;
+    case SYSTEM_EVENT_STA_WPS_ER_TIMEOUT:
+        Serial.println("WiFi Protected Setup (WPS): timeout in enrollee mode");
+        break;
+    case SYSTEM_EVENT_STA_WPS_ER_PIN:
+        Serial.println("WiFi Protected Setup (WPS): pin code in enrollee mode");
+        break;
+    case SYSTEM_EVENT_AP_START:
+        Serial.println("WiFi access point started");
+        break;
+    case SYSTEM_EVENT_AP_STOP:
+        Serial.println("WiFi access point  stopped");
+        break;
+    case SYSTEM_EVENT_AP_STACONNECTED:
+        Serial.println("Client connected");
+        break;
+    case SYSTEM_EVENT_AP_STADISCONNECTED:
+        Serial.println("Client disconnected");
+        break;
+    case SYSTEM_EVENT_AP_STAIPASSIGNED:
+        Serial.println("Assigned IP address to client");
+        break;
+    case SYSTEM_EVENT_AP_PROBEREQRECVED:
+        Serial.println("Received probe request");
+        break;
+    case SYSTEM_EVENT_GOT_IP6:
+        Serial.println("IPv6 is preferred");
+        break;
+    case SYSTEM_EVENT_ETH_START:
+        Serial.println("Ethernet started");
+        break;
+    case SYSTEM_EVENT_ETH_STOP:
+        Serial.println("Ethernet stopped");
+        break;
+    case SYSTEM_EVENT_ETH_CONNECTED:
+        Serial.println("Ethernet connected");
+        break;
+    case SYSTEM_EVENT_ETH_DISCONNECTED:
+        Serial.println("Ethernet disconnected");
+        break;
+    case SYSTEM_EVENT_ETH_GOT_IP:
+        Serial.println("Obtained IP address");
+        break;
+    default:
+        break;
+    }
+}
+
+void wifiConnect(int16_t res)
+{
+    Serial.printf("WiFi scan result: found %d networks\n", res);
+
+    // pick best network
+    int bestEntry = -1;
+    int bestRSSI = INT_MIN;
+    uint8_t bestBSSID[6];
+    int32_t bestChannel = 0;
+
+    for(int8_t i = 0; i < res; i++)
+    {
+        String ssid_scan;
+        int32_t rssi_scan;
+        uint8_t sec_scan;
+        uint8_t* BSSID_scan;
+        int32_t chan_scan;
+        WiFi.getNetworkInfo(i, ssid_scan, sec_scan, rssi_scan, BSSID_scan, chan_scan);
+        int networkEntry = fetchWifiIndex(ssid_scan.c_str());
+        if(networkEntry < 0)
+        {
+            continue;
+        }
+        if(rssi_scan <= bestRSSI)
+        {
+            continue;
+        }
+        bestEntry = networkEntry;
+        bestRSSI = rssi_scan;
+        bestChannel = chan_scan;
+        memcpy((void*) &bestBSSID, (void*) BSSID_scan, sizeof(bestBSSID));
+    }
+    WiFi.scanDelete();
+    if(bestEntry >= 0)
+    {
+        Serial.printf("WiFi Connecting BSSID: %02X:%02X:%02X:%02X:%02X:%02X SSID: %s PW %s Channel: %d (RSSI %d)\n", bestBSSID[0], bestBSSID[1], bestBSSID[2], bestBSSID[3], bestBSSID[4], bestBSSID[5],
+                      fetchWifiSSID(bestEntry), fetchWifiPw(bestEntry), bestChannel, bestRSSI);
+        WiFi.begin(fetchWifiSSID(bestEntry), fetchWifiPw(bestEntry), bestChannel, bestBSSID);
+        wifi_state = WIFI_CONNECT;
+    }
+    else
+    {
+        // rescan
+        // wifiStart();
+        WiFi.disconnect(true);
+        wifi_state = WIFI_DISABLED;
+    }
+}
+
+static int wifi_cto;
+
+void loopWifiBackground()
+{
+    //    Serial.printf("WifiBackground: state %d\n", wifi_state);
+    // handle Wifi station mode in background
+
+    if(wifi_state == WIFI_DISABLED)     // stopped => start can
+    {
+        wifi_state = WIFI_SCAN;
+        Serial.println("WiFi start scan");
+        WiFi.scanNetworks(true); // scan in async mode
+    }
+    else if(wifi_state == WIFI_SCAN)
+    {
+        int16_t res = WiFi.scanComplete();
+        if(res == 0 || res == WIFI_SCAN_FAILED)
+        {
+            // retry
+            Serial.println("WiFi restart scan");
+            WiFi.disconnect(true);
+            wifi_state = WIFI_DISABLED;
+            return;
+        }
+        if(res == WIFI_SCAN_RUNNING)
+        {
+            return;
+        }
+        // Scan finished, try to connect
+        wifiConnect(res);
+        wifi_cto = 0;
+    }
+    else if(wifi_state == WIFI_CONNECT)
+    {
+        wifi_cto++;
+        if(WiFi.isConnected())
+        {
+            wifi_state = WIFI_CONNECTED;
+            // update IP in display
+            String localIPstr = WiFi.localIP().toString();
+            Serial << "MyIP:" << localIPstr << endl;
+            config.ipaddr = localIPstr;
+            repaintDisplay();
+            enableNetwork(true);
+        }
+        if(wifi_cto > 20)    // failed, restart scanning
+        {
+            wifi_state = WIFI_DISABLED;
+            WiFi.disconnect(true);
+        }
+    }
+    else if(wifi_state == WIFI_CONNECTED)
+    {
+        if(!WiFi.isConnected())
+        {
+            config.ipaddr = "";
+            repaintDisplay();
+            wifi_state = WIFI_DISABLED;  // restart scan
+            enableNetwork(false);
+            WiFi.disconnect(true);
+        }
+        return;
+    }
+    Serial << "Delay(500)" << endl;
+    delay(500);
+}
+
+void startAP()
+{
+    Serial.println("Activating access point mode");
+    wifi_state = WIFI_APMODE;
+    WiFi.softAP(networks[0].id.c_str(), networks[0].pw.c_str());
+
+    Serial.println("Wait 100 ms for AP_START...");
+    delay(100);
+    Serial.println(WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(0, 0, 0, 0), IPAddress(255, 255, 255, 0)) ? "Ready" : "Failed!");
+
+    IPAddress myIP = WiFi.softAPIP();
+    String myIPstr = myIP.toString();
+    config.ipaddr = myIP.toString();
+    repaintDisplay();
+}
+String translateEncryptionType(wifi_auth_mode_t encryptionType)
+{
+    switch(encryptionType)
+    {
+    case(WIFI_AUTH_OPEN):
+        return "Open";
+    case(WIFI_AUTH_WEP):
+        return "WEP";
+    case(WIFI_AUTH_WPA_PSK):
+        return "WPA_PSK";
+    case(WIFI_AUTH_WPA2_PSK):
+        return "WPA2_PSK";
+    case(WIFI_AUTH_WPA_WPA2_PSK):
+        return "WPA_WPA2_PSK";
+    case(WIFI_AUTH_WPA2_ENTERPRISE):
+        return "WPA2_ENTERPRISE";
+    default:
+        return "";
+    }
+}
+
+// Wifi modes
+// 0: disabled. directly start initial mode (spectrum or scanner)
+// 1: station mode in background. directly start initial mode (spectrum or scanner)
+// 2: access point mode in background. directly start initial mode (spectrum or scanner)
+// 3: traditional sync. WifiScan. Tries to connect to a network, in case of failure activates AP.
+//    Mode 3 shows more debug information on serial port and display.
+#define MAXWIFIDELAY 20
+
+void loopWifiScan()
+{
+    if(config.wifi == 0)      // no Wifi
+    {
+        wifi_state = WIFI_DISABLED;
+        return;
+    }
+    if(config.wifi == 1)    // station mode, setup in background
+    {
+        wifi_state = WIFI_DISABLED;  // will start scanning in wifiLoopBackgroiund
+        return;
+    }
+    if(config.wifi == 2)    // AP mode, setup in background
+    {
+        startAP();
+        return;
+    }
+    // wifi==3 => original mode with non-async wifi setup
+
+    int cnt = 0;
+
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_STA);
+    int index = -1;
+    int n = WiFi.scanNetworks();
+    for(int i = 0; i < n; i++)
+    {
+        String ssid = WiFi.SSID(i);
+        String mac = WiFi.BSSIDstr(i);
+        String encryptionTypeDescription = translateEncryptionType(WiFi.encryptionType(i));
+        Serial.printf("Network %s: RSSI %d, MAC %s, enc: %s\n", ssid.c_str(), WiFi.RSSI(i), mac.c_str(), encryptionTypeDescription.c_str());
+        int curidx = fetchWifiIndex(ssid.c_str());
+        if(curidx >= 0 && index == -1)
+        {
+            index = curidx;
+            Serial.printf("Match found at scan entry %d, config network %d\n", i, index);
+        }
+    }
+    if(index >= 0)    // some network was found
+    {
+        Serial.print("Connecting to: ");
+        Serial.print(fetchWifiSSID(index));
+        Serial.print(" with password ");
+        Serial.println(fetchWifiPw(index));
+
+        WiFi.begin(fetchWifiSSID(index), fetchWifiPw(index));
+        while(WiFi.status() != WL_CONNECTED && cnt < MAXWIFIDELAY)
+        {
+            delay(500);
+            Serial.print(".");
+            if(cnt == 5)
+            {
+                // my FritzBox needs this for reconnecting
+                WiFi.disconnect(true);
+                delay(500);
+                WiFi.begin(fetchWifiSSID(index), fetchWifiPw(index));
+                Serial.print("Reconnecting to: ");
+                Serial.print(fetchWifiSSID(index));
+                Serial.print(" with password ");
+                Serial.println(fetchWifiPw(index));
+                delay(500);
+            }
+            cnt++;
+        }
+    }
+    if(index < 0 || cnt >= MAXWIFIDELAY)    // no network found, or connect not successful
+    {
+        WiFi.disconnect(true);
+        delay(1000);
+        startAP();
+        IPAddress myIP = WiFi.softAPIP();
+        Serial.print("AP IP address: ");
+        Serial.println(myIP);
+        //        disp.rdis->drawString(0, lastl, "AP:             ");
+        //        disp.rdis->drawString(6 * dispxs, lastl + 1, networks[0].id.c_str());
+        delay(3000);
+    }
+    else
+    {
+        Serial.println("");
+        Serial.println("WiFi connected");
+        Serial.println("IP address: ");
+        String localIPstr = WiFi.localIP().toString();
+        Serial.println(localIPstr);
+        //        sonde.setIP(localIPstr.c_str(), false);
+        //        sonde.updateDisplayIP();
+        wifi_state = WIFI_CONNECTED;
+        delay(3000);
+    }
+    enableNetwork(true);
+}
 void setup()
 {
     pinMode(BUILTIN_LED, OUTPUT);
@@ -306,11 +908,23 @@ void setup()
     display.setTextAlignment(TEXT_ALIGN_LEFT);
     display.setFont(ArialMT_Plain_10);
     bs.setHeaderBuffer(headerRXTXBuffer, DSTAR::RF_HEADER_SIZE * 2); //TODO refactore to constrctor
+
+    Serial.println("Initializing SPIFFS");
+    if(!SPIFFS.begin(true))
+    {
+        Serial.println("An Error has occurred while mounting SPIFFS");
+        return;
+    }
+    Serial.println("Reading initial configuration");
+    readConfig();
+
+    setupWifiList();
+
     radio.reset();
     Serial.print(F("Initializing ... "));
     pinMode(LORA_IO2, OUTPUT);
     pinMode(LORA_IO1, INPUT);
-    checkLoraState(radio.beginFSK(f, 4.8f, 4.8 * 0.25f, 25.0f, 4, 48, false));
+    checkLoraState(radio.beginFSK(config.qrt, 4.8f, 4.8 * 0.25f, 25.0f, 4, 48, false));
     //    MorseClient morse(&radio);
     //    morse.begin(f);
     //    morse.startSignal();
@@ -358,6 +972,8 @@ void resetTXData()
 
 void loop()
 {
+    loopWifiBackground();
+
     while(gpsSerial.available() > 0)
     {
         auto ch = gpsSerial.read();
