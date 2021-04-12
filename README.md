@@ -35,17 +35,17 @@ works GMSK at 4800bits/s fine at +/- 600Hz offset from the carrier frequency.
 * <del> Unite transmitter with receiver into transceiver
 * Use SX1278 AFC (automatic frequency correction) to correct XTAL offset and thermal drifft
 * Create some ??web?? interface for setting 
-    * Callsign
+    * <del>Callsign
     * Coordsinates source
-    * D-Star message
-    * DPRS - message
+    * <del>D-Star message
+    * <del>DPRS - message
     * DPRS - symbol
-    * beacon period
+    * <del>beacon period
 * Use D-Star sync frame to get into receive stream (low prio)
 * Implement support for DV fast data
 
 ## Notes
-* D-Star SMS message is transmitted in format: ```$$Msg,OK1CHP,OK1LOL,001172ahoj 0xA2, 0xD, 0x0``` no clue what that 001172 means
+* D-Star SMS message is transmitted in format: ```$$Msg,OK1CHP,OK1LOL,001172ahoj 0xA2, 0xD, 0x0``` no clue what that 001172 means, RS-MS1A app handles it.
 * D-Star Image block is transmitted as ```$$Pic,OK1CHP,OK1LOL,0111 0xEF, 0x80, 0x9, 0x7,_Z 0xEF, 0x8D,aQ@ 0x1F, 0xEF,g 0xD``` 
 All those ICOM extensions are sent as a message type 0x30 and are thus dumped directly into serial port
 
