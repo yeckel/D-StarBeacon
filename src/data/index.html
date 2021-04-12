@@ -1,13 +1,51 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>D-Star beacon</title>
-  <meta charset="UTF-8">
-  <link rel="stylesheet" type="text/css" href="style.css">
+    <title>D-Star beacon</title>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" type="text/css" href="style.css">
 </head>
 <body>
-  <h1>D-Star beacon</h1>
-  Callsign=%CALLSIGN%
+<h1>D-Star beacon</h1>
+<form method="GET" id="ConfigForm" action="/action_page.html">
+<table>
+    <tbody>
+    <tr>
+        <th>Item</th>
+        <th>Value</th>
+    </tr>
+    <tr>
+        <td>Callsign</td>
+        <td><input name="CALLSIGN" type="text" value="%CALLSIGN%"></td>
+    </tr>
+    <tr>
+        <td>Callsign suffix</td>
+        <td><input name="Suffix" type="text" value="%SUFFIX%"></td>
+    </tr>
+    <tr>
+        <td>QRT  [MHz]</td>
+        <td><input name="QRT" type="text" value="%QRT%"></td>
+    </tr>
+    <tr>
+        <td>TX Power [dBm] 2..17</td>
+        <td><input name="QRT" type="text" value="%PWR%"></td>
+    </tr>
+    <tr>
+        <td>dStarMsg (max 20char)</td>
+        <td><input name="dStarMsg" type="text" value="%dStarMsg%"></td>
+    </tr>
+    <tr>
+        <td>dprsMsg</td>
+        <td><input name="dprsMsg" type="text" value="%dprsMsg%"></td>
+    </tr>
+    <tr>
+        <td>BeaconInterval [s](0 off)</td>
+        <td><input name="BeaconInterval" type="text" value="%BeaconInterval%"></td>
+    </tr>
+    </tbody>
+</table>
+</form>
+<button type="submit" form="ConfigForm" value="Submit">Submit</button>
 </body>
 </html>
 

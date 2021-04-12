@@ -16,6 +16,7 @@
 #include <ESPAsyncWebServer.h>
 #include <SPIFFS.h>
 #include <ESPmDNS.h>
+#include <sys/time.h>
 
 
 
@@ -53,10 +54,12 @@ struct BeaconConfig
     int wifi;				// connect to known WLAN 0=skip
     String ipaddr{"0.0.0.0"};
     String callsign{"MY0CALL"};
+    String callsignSuffix{"1"};
     String dStarMsg{"D-Star Beacon"};
     String dprsMsg{"ESP32 D-Star Beacon"};
     float qrt{434.800f + 0.00244f};
-    bool isBeaconEnabled{false};
+    uint beaconInterval{0};
+    uint8_t txPower{5};
 };
 
 BeaconConfig config;
@@ -69,8 +72,6 @@ uint8_t stoppingFrame[] = {0xaa, 0xaa, 0xaa, 0xaa, 0x13, 0x5e};
 static constexpr uint16_t STOPPING_FRAME_BITSIZE{sizeof(stoppingFrame) * 8};
 volatile uint stoppingFramePos{0};
 uint8_t plainDataBTRXBuff[5];
-
-uint8_t DSTAR_MSG[SlowAmbe::DSTAR_MSG_SIZE] = {'D', '-', 'S', 't', 'a', 'r', ' ', 'b', 'e', 'a', 'c', 'o', 'n', ' ', 'e', 's', 'p', '3', '2', '!'};
 
 uint8_t dStarTxHeaderData[DSTAR::RF_HEADER_SIZE] = {0x0, 0x0, 0x0, //flag 1,2,3
                                                     0x44, 0x49, 0x52, 0x45, 0x43, 0x54, 0x20, 0x20, //destination callsign
@@ -172,10 +173,19 @@ void setConfig(const char* cfg)
         }
         return;
     }
-    if(strcmp(cfg, "BeaconEnabled") == 0 &&
-       strcmp(val, "true") == 0)
+    if(strcmp(cfg, "BeaconInterval") == 0)
     {
-        config.isBeaconEnabled = true;
+        config.beaconInterval = String(val).toInt();
+        return;
+    }
+    if(strcmp(cfg, "CallsignSuffix") == 0)
+    {
+        config.callsignSuffix = val;
+        return;
+    }
+    if(strcmp(cfg, "TXPower") == 0)
+    {
+        config.txPower = min(max(int(String(val).toInt()), 2), 17);//min,max values from RadioLib
         return;
     }
     Serial.printf("Invalid config option '%s'=%s \n", cfg, val);
@@ -383,7 +393,7 @@ void startTX()
     prepareHeader();
     sa.reset();
     bs.reset();
-    sa.setMSG(DSTAR_MSG);
+    sa.setMSG(config.dStarMsg);
     ambeDataBitPos = SlowAmbe::SLOW_AMBE_BITSIZE;//to run into data fetch immediately
     radio.clearDio0Action();
     radio.setDio1Action(txBit);
@@ -405,10 +415,36 @@ void startRX()
 // Replaces placeholder with LED state value
 String processor(const String& var)
 {
+    char buff[20];
     Serial.println(var);
     if(var == "CALLSIGN")
     {
-        return String("OK1CHP");
+        return config.callsign;
+    }
+    if(var == "QRT")
+    {
+        sprintf(buff, "%7.3f", config.qrt);
+        return String(buff);
+    }
+    if(var == "dStarMsg")
+    {
+        return config.dStarMsg;
+    }
+    if(var == "dprsMsg")
+    {
+        return config.dprsMsg;
+    }
+    if(var == "BeaconInterval")
+    {
+        return String(config.beaconInterval);
+    }
+    if(var == "SUFFIX")
+    {
+        return config.callsignSuffix;
+    }
+    if(var == "PWR")
+    {
+        return String(config.txPower);
     }
     return String();
 }
@@ -924,7 +960,7 @@ void setup()
     Serial.print(F("Initializing ... "));
     pinMode(LORA_IO2, OUTPUT);
     pinMode(LORA_IO1, INPUT);
-    checkLoraState(radio.beginFSK(config.qrt, 4.8f, 4.8 * 0.25f, 25.0f, 4, 48, false));
+    checkLoraState(radio.beginFSK(config.qrt, 4.8f, 4.8 * 0.25f, 25.0f, config.txPower, 48, false));
     //    MorseClient morse(&radio);
     //    morse.begin(f);
     //    morse.startSignal();
@@ -959,7 +995,7 @@ String formatDPRSString(String callsign, double lat, double lon, int alt, String
                   + "\r");
 }
 
-uint8_t lastSecond{0};
+long lastBEaconTime{0};
 uint8_t readBTByte{0};
 void resetTXData()
 {
@@ -970,6 +1006,22 @@ void resetTXData()
     isFirstAmbe = true;
 }
 
+long getGPSTime()
+{
+    time_t t_of_day{1618227800};
+    struct tm t;
+    if(gps.date.isValid())
+    {
+        t.tm_year = gps.date.year() - 1900;
+        t.tm_mon = gps.date.month() - 1;         // Month, 0 - jan
+        t.tm_mday = gps.date.day();          // Day of the month
+        t.tm_hour = gps.time.hour();
+        t.tm_min =  gps.time.minute();
+        t.tm_sec = gps.time.second();
+        t_of_day = mktime(&t);
+    }
+    return t_of_day;
+}
 void loop()
 {
     loopWifiBackground();
@@ -1031,18 +1083,23 @@ void loop()
             bluetoothXOFF = true;
         }
     }
-    //    if(gps.time.isUpdated())
-    //    {
-    //        Serial << gps.time.value() << endl;
-    //        auto newSecond = gps.time.second();
-    //        if(newSecond % 20 == 0 && lastSecond != newSecond)
-    //        {
-    //            lastSecond = newSecond;
-    //            prepareDPRS(formatDPRSString("OK1CHP-1",
-    //                                         gps.location.lat(), gps.location.lng(), gps.altitude.feet(),
-    //                                         "T-BEAM GPS"));
-    //        }
-    //    }
+    if(!isPTTPressed &&
+       gps.time.isUpdated() &&
+       config.beaconInterval &&
+       wifi_state == WIFI_CONNECTED &&
+       gps.location.isValid())
+    {
+        auto newSecond = getGPSTime();
+        //        Serial << newSecond << endl;
+        if(newSecond % config.beaconInterval == 0
+           && lastBEaconTime != newSecond)
+        {
+            lastBEaconTime = newSecond;
+            prepareDPRS(formatDPRSString(config.callsign + "-" + config.callsignSuffix,
+                                         gps.location.lat(), gps.location.lng(), gps.altitude.feet(),
+                                         config.dprsMsg));
+        }
+    }
     if(!sa.comBuffer.isEmpty() && !isPTTPressed)
     {
         startTX();
