@@ -148,7 +148,7 @@ void setConfig(const char* cfg)
         s--;
     }
     Serial.printf("configuration option '%s'=%s \n", cfg, val);
-    if(strcmp(cfg, "CALLSIGN") == 0)
+    if(strcmp(cfg, "Callsign") == 0)
     {
         config.callsign = String(val);
         return;
@@ -189,6 +189,21 @@ void setConfig(const char* cfg)
     if(strcmp(cfg, "PWR") == 0)
     {
         config.txPower = min(max(int(String(val).toInt()), 2), 17);//min,max values from RadioLib
+        return;
+    }
+    if(strcmp(cfg, "Companion") == 0)
+    {
+        config.companion = val;
+        return;
+    }
+    if(strcmp(cfg, "Destination") == 0)
+    {
+        config.destination = val;
+        return;
+    }
+    if(strcmp(cfg, "Repeater") == 0)
+    {
+        config.repeater = val;
         return;
     }
     Serial.printf("Invalid config option '%s'=%s \n", cfg, val);
@@ -500,7 +515,7 @@ const char* handleConfigPost(AsyncWebServerRequest* request)
     //        Serial.println(param.c_str());
     //    }
     {
-        auto param = request->getParam("CALLSIGN", true);
+        auto param = request->getParam("Callsign", true);
         if(param != nullptr)
         {
             auto val = param->value();
@@ -574,7 +589,7 @@ const char* handleConfigPost(AsyncWebServerRequest* request)
         }
     }
     {
-        auto param = request->getParam("DESTINATION", true);
+        auto param = request->getParam("Destination", true);
         if(param != nullptr)
         {
             auto val = param->value();
@@ -584,7 +599,7 @@ const char* handleConfigPost(AsyncWebServerRequest* request)
         }
     }
     {
-        auto param = request->getParam("REPEATER", true);
+        auto param = request->getParam("Repeater", true);
         if(param != nullptr)
         {
             auto val = param->value();
@@ -594,7 +609,7 @@ const char* handleConfigPost(AsyncWebServerRequest* request)
         }
     }
     {
-        auto param = request->getParam("COMPANION", true);
+        auto param = request->getParam("companion", true);
         if(param != nullptr)
         {
             auto val = param->value();
