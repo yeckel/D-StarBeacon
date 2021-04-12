@@ -54,6 +54,9 @@ struct BeaconConfig
     int wifi;				// connect to known WLAN 0=skip
     String ipaddr{"0.0.0.0"};
     String callsign{"MY0CALL"};
+    String destination{"DIRECT"};
+    String repeater{"DIRECT"};
+    String companion{"CQCQCQ"};
     String callsignSuffix{"1"};
     String dStarMsg{"D-Star Beacon"};
     String dprsMsg{"ESP32 D-Star Beacon"};
@@ -340,8 +343,31 @@ void receivedSyncWord(void)
     radio.setDio1Action(rxBit);
 }
 //----------------------------------------------------------------------------------------
+void printHeader(uint8_t* rfHeader)
+{
+    Serial << endl << "RF Header:\"";
+    for(uint i = 0; i < DSTAR::RF_HEADER_SIZE; i++)
+    {
+        if(rfHeader[i] >= 0x20 && rfHeader[i] <= 0x7F)
+        {
+            Serial << char(rfHeader[i]);
+        }
+        else
+        {
+            Serial << "0x" << _HEX(rfHeader[i]) << " ";
+        }
+    }
+    Serial << "\"" << endl;
+}
 void prepareHeader()
 {
+    Serial << __FUNCTION__ << endl;
+    memset(dStarTxHeaderData + 3, 0x20, 4 * 8);
+    memcpy(dStarTxHeaderData + 3, config.destination.c_str(), min(int(config.destination.length()), 8));
+    memcpy(dStarTxHeaderData + 3 + 8, config.repeater.c_str(), min(int(config.repeater.length()), 8));
+    memcpy(dStarTxHeaderData + 3 + 16, config.companion.c_str(), min(int(config.companion.length()), 8));
+    memcpy(dStarTxHeaderData + 3 + 24, config.callsign.c_str(), min(int(config.callsign.length()), 8));
+    printHeader(dStarTxHeaderData);
     dStar.add_crc(dStarTxHeaderData);
     dStar.convolution(dStarTxHeaderData, headerRXTXBuffer);   //source, dest
     dStar.interleave(headerRXTXBuffer);
@@ -363,19 +389,7 @@ void decodeHeader(uint8_t* bufferConv)
     if(isCrcFine)
     {
         receivedValidRFHeader = true;
-        Serial << endl << "RF Header:\"";
-        for(uint i = 0; i < sizeof(dStarRxHeaderData); i++)
-        {
-            if(dStarRxHeaderData[i] >= 0x20 && dStarRxHeaderData[i] <= 0x7F)
-            {
-                Serial << char(dStarRxHeaderData[i]);
-            }
-            else
-            {
-                Serial << "0x" << _HEX(dStarRxHeaderData[i]) << " ";
-            }
-        }
-        Serial << "\"" << endl;
+        printHeader(dStarRxHeaderData);
     }
 }
 void prepareDPRS(const String& data)
@@ -446,10 +460,30 @@ String processor(const String& var)
     {
         return String(config.txPower);
     }
+    if(var == "DESTINATION")
+    {
+        return String(config.destination);
+    }
+    if(var == "REPEATER")
+    {
+        return String(config.repeater);
+    }
+    if(var == "COMPANION")
+    {
+        return String(config.companion);
+    }
     return String();
 }
 
-const char* handleQRGPost(AsyncWebServerRequest* request)
+void writeParamToFile(AsyncWebParameter* param, File& file)
+{
+    char buff[100];
+    sprintf(buff, "%s=%s", param->name().c_str(), param->value().c_str());
+    int wlen = file.printf("%s\n", buff);
+    Serial.printf("Written: %s %d\n", buff, wlen);
+}
+
+const char* handleConfigPost(AsyncWebServerRequest* request)
 {
     File file = SPIFFS.open("/config.txt", "w");
     if(!file)
@@ -465,18 +499,14 @@ const char* handleQRGPost(AsyncWebServerRequest* request)
     //        String param = request->getParam(i)->name();
     //        Serial.println(param.c_str());
     //    }
-    char buff[100];
     {
         auto param = request->getParam("CALLSIGN", true);
         if(param != nullptr)
         {
             auto val = param->value();
             val.trim();
-            Serial << "Callsign: " << val << endl;
             config.callsign = val;
-            sprintf(buff, "%s=%s", param->name().c_str(), param->value().c_str());
-            int wlen = file.printf("%s\n", buff);
-            Serial.printf("Written: %s %d\n", buff, wlen);
+            writeParamToFile(param, file);
         }
     }
     {
@@ -485,11 +515,8 @@ const char* handleQRGPost(AsyncWebServerRequest* request)
         {
             auto val = param->value();
             val.trim();
-            Serial << "Suffix: " << val << endl;
             config.callsignSuffix = val;
-            sprintf(buff, "%s=%s", param->name().c_str(), param->value().c_str());
-            int wlen = file.printf("%s\n", buff);
-            Serial.printf("Written: %s %d\n", buff, wlen);
+            writeParamToFile(param, file);
         }
     }
     {
@@ -498,14 +525,11 @@ const char* handleQRGPost(AsyncWebServerRequest* request)
         {
             auto val = param->value();
             val.trim();
-            Serial << "QRT: " << val << endl;
             auto freq = String(val).toFloat();
             if(freq != 0.0f)
             {
                 config.qrt = freq;
-                sprintf(buff, "%s=%s", param->name().c_str(), param->value().c_str());
-                int wlen = file.printf("%s\n", buff);
-                Serial.printf("Written: %s %d\n", buff, wlen);
+                writeParamToFile(param, file);
             }
         }
     }
@@ -515,11 +539,8 @@ const char* handleQRGPost(AsyncWebServerRequest* request)
         {
             auto val = param->value();
             val.trim();
-            Serial << "PWR: " << val << endl;
             config.txPower = min(max(int(String(val).toInt()), 2), 17);
-            sprintf(buff, "%s=%s", param->name().c_str(), param->value().c_str());
-            int wlen = file.printf("%s\n", buff);
-            Serial.printf("Written: %s %d\n", buff, wlen);
+            writeParamToFile(param, file);
         }
     }
     {
@@ -528,11 +549,8 @@ const char* handleQRGPost(AsyncWebServerRequest* request)
         {
             auto val = param->value();
             val.trim();
-            Serial << "dStarMsg: " << val << endl;
             config.dStarMsg = val;
-            sprintf(buff, "%s=%s", param->name().c_str(), param->value().c_str());
-            int wlen = file.printf("%s\n", buff);
-            Serial.printf("Written: %s %d\n", buff, wlen);
+            writeParamToFile(param, file);
         }
     }
     {
@@ -541,11 +559,8 @@ const char* handleQRGPost(AsyncWebServerRequest* request)
         {
             auto val = param->value();
             val.trim();
-            Serial << "dprsMsg: " << val << endl;
             config.dprsMsg = val;
-            sprintf(buff, "%s=%s", param->name().c_str(), param->value().c_str());
-            int wlen = file.printf("%s\n", buff);
-            Serial.printf("Written: %s %d\n", buff, wlen);
+            writeParamToFile(param, file);
         }
     }
     {
@@ -554,11 +569,38 @@ const char* handleQRGPost(AsyncWebServerRequest* request)
         {
             auto val = param->value();
             val.trim();
-            Serial << "BeaconInterval: " << val << endl;
             config.beaconInterval = String(val).toInt();
-            sprintf(buff, "%s=%s", param->name().c_str(), param->value().c_str());
-            int wlen = file.printf("%s\n", buff);
-            Serial.printf("Written: %s %d\n", buff, wlen);
+            writeParamToFile(param, file);
+        }
+    }
+    {
+        auto param = request->getParam("DESTINATION", true);
+        if(param != nullptr)
+        {
+            auto val = param->value();
+            val.trim();
+            config.destination = val;
+            writeParamToFile(param, file);
+        }
+    }
+    {
+        auto param = request->getParam("REPEATER", true);
+        if(param != nullptr)
+        {
+            auto val = param->value();
+            val.trim();
+            config.repeater = val;
+            writeParamToFile(param, file);
+        }
+    }
+    {
+        auto param = request->getParam("COMPANION", true);
+        if(param != nullptr)
+        {
+            auto val = param->value();
+            val.trim();
+            config.companion = val;
+            writeParamToFile(param, file);
         }
     }
     Serial.printf("Flushing file\n");
@@ -584,7 +626,7 @@ void SetupAsyncServer()
     });
     server.on("/index.html", HTTP_POST, [](AsyncWebServerRequest * request)
     {
-        handleQRGPost(request);
+        handleConfigPost(request);
         request->send(SPIFFS, "/index.html", String(), false, processor);
     });
     server.onNotFound([](AsyncWebServerRequest * request)

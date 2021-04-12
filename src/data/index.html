@@ -15,12 +15,24 @@
         <th>Value</th>
     </tr>
     <tr>
-        <td>Callsign</td>
-        <td><input name="CALLSIGN" type="text" value="%CALLSIGN%"></td>
+        <td>Callsign (max 8 chars)</td>
+        <td><input name="CALLSIGN" type="text" maxlength="8" value="%CALLSIGN%"></td>
     </tr>
     <tr>
-        <td>Callsign suffix</td>
-        <td><input name="Suffix" type="text" value="%SUFFIX%"></td>
+        <td>Destination (max 8 chars)</td>
+        <td><input name="DESTINATION" type="text" maxlength="8" value="%DESTINATION%"></td>
+    </tr>
+    <tr>
+        <td>Repeater (max 8 chars)</td>
+        <td><input name="REPEATER" type="text" maxlength="8" value="%REPEATER%"></td>
+    </tr>
+    <tr>
+        <td>Companion (max 8 chars)</td>
+        <td><input name="COMPANION" type="text" maxlength="8" value="%COMPANION%"></td>
+    </tr>
+    <tr>
+        <td>Callsign suffix (max 4 char)</td>
+        <td><input name="Suffix" type="text" maxlength="4" value="%SUFFIX%"></td>
     </tr>
     <tr>
         <td>QRT  [MHz]</td>
@@ -31,12 +43,12 @@
         <td><input name="PWR" type="text" value="%PWR%"></td>
     </tr>
     <tr>
-        <td>dStarMsg (max 20char)</td>
-        <td><input name="dStarMsg" type="text" value="%dStarMsg%"></td>
+        <td>dStarMsg (max 20 chars)</td>
+        <td><input name="dStarMsg" type="text" maxlength="20" value="%dStarMsg%"></td>
     </tr>
     <tr>
-        <td>dprsMsg</td>
-        <td><input name="dprsMsg" type="text" value="%dprsMsg%"></td>
+        <td>dprsMsg (max 67 chars)</td>
+        <td><input name="dprsMsg" type="text" maxlength="67" value="%dprsMsg%"></td>
     </tr>
     <tr>
         <td>BeaconInterval [s](0 off)</td>
