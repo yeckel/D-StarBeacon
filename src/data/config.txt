@@ -1,10 +1,10 @@
-call=OK1CHP
+Callsign=OK1CHP
 QRT=434.80244
 dStarMsg=D-Star Beacon
 dprsMsg=ESP32 D-Star Beacon
 BeaconInterval=30
-CallsignSuffix=1
-TXPower=5
-destination=DIRECT
-repeater=DIRECT
-companion=CQCQCQ
+Suffix=1
+PWR=5
+Destination=DIRECT
+Repeater=DIRECT
+Companion=CQCQCQ
