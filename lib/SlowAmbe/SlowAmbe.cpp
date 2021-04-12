@@ -160,8 +160,11 @@ const uint8_t* SlowAmbe::getDStarMsg()
     return dStarMsg;
 }
 
-void SlowAmbe::setMSG(uint8_t* msg)
+void SlowAmbe::setMSG(const String& msg)
 {
+    uint8_t buff[20];
+    memset(buff, 0x20, sizeof(buff));
+    memcpy(buff, msg.c_str(), min(sizeof(buff), msg.length()));
     uint32_t data{0x6666600u};
     uint8_t* p_data = (uint8_t*)&data;
     for(uint8_t i = 0; i < 4; i++)

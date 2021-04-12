@@ -2,4 +2,6 @@ call=OK1CHP
 QRT=434.80244
 dStarMsg=D-Star Beacon
 dprsMsg=ESP32 D-Star Beacon
-BeaconEnabled=true
+BeaconInterval=30
+CallsignSuffix=1
+TXPower=5
