@@ -12,7 +12,7 @@ Simple D-Star transceiver for TTGO T-Beam ESP32 SX1278 written with Platformio.
 
 Currently the D-Star header, D-Star message and D-GPS is properly encoded and sent every 20s.
 
-For header viterbi&co code from Anthonys F4GOH [DSTAR](https://github.com/f4goh/DSTAR) great work is used with some modification.
+For header viterbi&co code from Anthonys F4GOH [DSTAR](https://github.com/f4goh/DSTAR) great work is used with some modification. The configuration and WiFi code was heavily inspired by DL9RDZ[RDZ_TTGO_SONDE](https://github.com/dl9rdz/rdz_ttgo_sonde)
 
 Probably best D-Star info sources:
 [kb9mwr](https://www.qsl.net/kb9mwr/projects/dv/dstar/)
