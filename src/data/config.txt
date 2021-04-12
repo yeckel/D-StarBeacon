@@ -5,3 +5,6 @@ dprsMsg=ESP32 D-Star Beacon
 BeaconInterval=30
 CallsignSuffix=1
 TXPower=5
+destination=DIRECT
+repeater=DIRECT
+companion=CQCQCQ
