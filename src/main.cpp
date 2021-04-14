@@ -16,20 +16,8 @@
 #include <ESPAsyncWebServer.h>
 #include <SPIFFS.h>
 #include <ESPmDNS.h>
-#include <sys/time.h>
 
-
-
-#define LORA_CS 18      // GPIO18 - SX1276 CS
-#define LORA_RST 23     // GPIO23 - SX1276 RST
-#define LORA_IRQ 26     // GPIO26 - SX1276 IO0
-#define LORA_IO0 LORA_IRQ  // alias
-#define LORA_IO1 33     // GPIO33 - SX1276 IO1 -> wired on pcb AND connected to header pin LORA1
-#define LORA_IO2 32     // GPIO32 - SX1276 IO2 -> wired on pcb AND connected to header pin LORA2
-
-const int offset = 2 * 3600; //CEST
-
-SX1278 radio = new Module(LORA_CS, LORA_IRQ, LORA_RST, LORA_IO1);
+SX1278 radio = new Module(LORA_CS, LORA_IRQ, LORA_RST, LORA_D1);
 MorseClient morse(&radio);
 SSD1306Wire display(0x3c, SDA, SCL, GEOMETRY_128_64);
 TinyGPSPlus gps;
@@ -269,7 +257,7 @@ void sendBit(uint8_t* sendBuff, uint buffBitPos)
     auto bitPos = buffBitPos % 8;
     bool bit = sendBuff[bytePos] & (0b10000000 >> bitPos);
     //    Serial << bit;
-    digitalWrite(LORA_IO2, bit);
+    digitalWrite(LORA_D2, bit);
 }
 
 void sendPreambleBit()
@@ -343,7 +331,7 @@ void txBit()
 //-------------------------------RX bit routines----------------------------------------
 void rxBit()
 {
-    auto receivedBit = digitalRead(LORA_IO2);
+    auto receivedBit = digitalRead(LORA_D2);
     auto commStopped = bs.appendBit(receivedBit);
     if(commStopped)
     {
@@ -427,7 +415,6 @@ void startTX()
     radio.clearDio0Action();
     radio.setDio1Action(txBit);
     checkLoraState(radio.transmitDirect());
-    radio.setDio1Action(txBit);
     Serial << __FUNCTION__ << endl;
 }
 void startRX()
@@ -437,7 +424,7 @@ void startRX()
     sa.reset();
     bs.reset();
     radio.setDio0Action(receivedSyncWord);
-    checkLoraState(radio.receiveDirect());
+    radio.receiveDirect();
     Serial << __FUNCTION__ << endl;
 }
 
@@ -1139,8 +1126,8 @@ void setup()
 
     radio.reset();
     Serial.print(F("Initializing ... "));
-    pinMode(LORA_IO2, OUTPUT);
-    pinMode(LORA_IO1, INPUT);
+    pinMode(LORA_D2, OUTPUT);
+    pinMode(LORA_D1, INPUT);
     checkLoraState(radio.beginFSK(config.qrt, 4.8f, 4.8 * 0.25f, 25.0f, config.txPower, 48, false));
     //    MorseClient morse(&radio);
     //    morse.begin(f);
