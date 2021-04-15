@@ -19,7 +19,7 @@ Probably best D-Star info sources:
 [kb9mwr](https://www.qsl.net/kb9mwr/projects/dv/dstar/)
 [Slow data](https://www.qsl.net/kb9mwr/projects/dv/dstar/Slow%20Data.pdf)
 
-Have a look in (D-StarReceive)[https://github.com/yeckel/D-StarReceive] for complementary receiver.
+Have a look in [D-StarReceive](https://github.com/yeckel/D-StarReceive) for complementary receiver.
 
 ## Warning
 XTAL on board the SX1278 transceiver module has a random frequency offset which driffts with temperature! The offset could be measured by sending CW and tuning an SDR receiver 
