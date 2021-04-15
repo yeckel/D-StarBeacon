@@ -1,4 +1,3 @@
-//For T-Beam with AXP202
 #include <Arduino.h>
 #include <SSD1306Wire.h>
 #include <RadioLib.h>
@@ -15,7 +14,6 @@
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
 #include <SPIFFS.h>
-#include <ESPmDNS.h>
 
 SX1278 radio = new Module(LORA_CS, LORA_IRQ, LORA_RST, LORA_D1);
 MorseClient morse(&radio);
@@ -38,8 +36,6 @@ void checkLoraState(int state)
 
 struct BeaconConfig
 {
-    // hardware configuration
-    int wifi;				// connect to known WLAN 0=skip
     String ipaddr{"0.0.0.0"};
     String callsign{"MY0CALL"};
     String destination{"DIRECT"};
@@ -95,6 +91,8 @@ volatile bool receivedPacket{false};
 bool isGPSValid{false};
 bool isBTConnected{false};
 bool receivedValidRFHeader{false};
+bool m_isAp{false};
+float m_afc{0.0f};
 
 // Read line from file, independent of line termination (LF or CR LF)
 String readLine(Stream& stream)
@@ -135,28 +133,30 @@ void setConfig(const char* cfg)
         *s = 0;
         s--;
     }
+    String value(val);
     Serial.printf("configuration option '%s'=%s \n", cfg, val);
     if(strcmp(cfg, "Callsign") == 0)
     {
-        config.callsign = String(val);
+        value.toUpperCase();
+        config.callsign = value;
         return;
     }
     if(strcmp(cfg, "dStarMsg") == 0)
     {
-        config.dStarMsg = String(val);
+        config.dStarMsg = value;
         return;
     }
     if(strcmp(cfg, "dprsMsg") == 0)
     {
-        config.dprsMsg = String(val);
+        config.dprsMsg = value;
         return;
     }
     if(strcmp(cfg, "QRT") == 0)
     {
-        auto freq = String(val).toFloat();
+        auto freq = value.toFloat();
         if(freq == 0.0f)
         {
-            Serial << "Invalid frequency:" << val << endl;
+            Serial << "Invalid frequency:" << value << endl;
         }
         else
         {
@@ -166,32 +166,35 @@ void setConfig(const char* cfg)
     }
     if(strcmp(cfg, "BeaconInterval") == 0)
     {
-        config.beaconInterval = String(val).toInt();
+        config.beaconInterval = value.toInt();
         return;
     }
     if(strcmp(cfg, "Suffix") == 0)
     {
-        config.callsignSuffix = val;
+        config.callsignSuffix = value;
         return;
     }
     if(strcmp(cfg, "PWR") == 0)
     {
-        config.txPower = min(max(int(String(val).toInt()), 2), 17);//min,max values from RadioLib
+        config.txPower = min(max(int(value.toInt()), 2), 17);//min,max values from RadioLib
         return;
     }
     if(strcmp(cfg, "Companion") == 0)
     {
-        config.companion = val;
+        value.toUpperCase();
+        config.companion = value;
         return;
     }
     if(strcmp(cfg, "Destination") == 0)
     {
-        config.destination = val;
+        value.toUpperCase();
+        config.destination = value;
         return;
     }
     if(strcmp(cfg, "Repeater") == 0)
     {
-        config.repeater = val;
+        value.toUpperCase();
+        config.repeater = value;
         return;
     }
     Serial.printf("Invalid config option '%s'=%s \n", cfg, val);
@@ -220,33 +223,40 @@ void repaintDisplay()
     display.drawString(20, 0, buff);
     display.drawString(90, 0, isGPSValid ? "GPS" : "gps");
     display.drawString(115, 0, isBTConnected ? "BT" : "bt");
-    display.drawString(0, 10, "IP:" + config.ipaddr);
-    display.drawString(60, 10, "CS:" + config.callsign);
-    display.drawLine(0, 32, 128, 32);
+    display.drawString(0, 10, "CS:" + config.callsign);
+    display.drawString(67, 10, "CP:" + config.companion);
+    display.drawLine(0, 21, 128, 21);
     char buffHeader[10];
     if(receivedValidRFHeader)
     {
         //callsign
         memcpy(buffHeader, dStarRxHeaderData + 27, 8);
         buffHeader[8] = 0x00;
-        display.drawStringf(0, 33, buff, "Cs:%s", buffHeader);
+        display.drawStringf(0, 22, buff, "Cs:%s", buffHeader);
         //rig
         memcpy(buffHeader, dStarRxHeaderData + 35, 4);
         buffHeader[4] = 0x00;
-        display.drawStringf(65, 33, buff, "Rig:%s", buffHeader);
+        display.drawStringf(65, 22, buff, "Rig:%s", buffHeader);
         //dst
         memcpy(buffHeader, dStarRxHeaderData + 3, 8);
         buffHeader[8] = 0x00;
-        display.drawStringf(0, 43, buff, "Ds:%s", buffHeader);
+        display.drawStringf(0, 32, buff, "Ds:%s", buffHeader);
         //companion
         memcpy(buffHeader, dStarRxHeaderData + 19, 8);
         buffHeader[8] = 0x00;
-        display.drawStringf(65, 43, buff, "Cc:%s", buffHeader);
+        display.drawStringf(65, 32, buff, "Cp:%s", buffHeader);
+        //AFC value
+        display.drawStringf(0, 52, buff, "f er: %.1f kHz", m_afc / 1000);
+    }
+    else
+    {
+        display.drawString(0, 33, (m_isAp ? "AP:" : "IP:") + config.ipaddr);
+        display.drawString(0, 43, "ssid:" + (m_isAp ? WiFi.softAPSSID() : WiFi.SSID()));
     }
     if(sa.haveDStarMsg())
     {
         auto m = (const char*)sa.getDStarMsg();
-        display.drawStringf(0, 52, buff, "Msg:%s", m);
+        display.drawStringf(0, 42, buff, "Msg:%s", m);
     }
     display.display();
 }
@@ -507,6 +517,7 @@ const char* handleConfigPost(AsyncWebServerRequest* request)
         {
             auto val = param->value();
             val.trim();
+            val.toUpperCase();
             config.callsign = val;
             writeParamToFile(param, file);
         }
@@ -581,6 +592,7 @@ const char* handleConfigPost(AsyncWebServerRequest* request)
         {
             auto val = param->value();
             val.trim();
+            val.toUpperCase();
             config.destination = val;
             writeParamToFile(param, file);
         }
@@ -591,16 +603,18 @@ const char* handleConfigPost(AsyncWebServerRequest* request)
         {
             auto val = param->value();
             val.trim();
+            val.toUpperCase();
             config.repeater = val;
             writeParamToFile(param, file);
         }
     }
     {
-        auto param = request->getParam("companion", true);
+        auto param = request->getParam("Companion", true);
         if(param != nullptr)
         {
             auto val = param->value();
             val.trim();
+            val.toUpperCase();
             config.companion = val;
             writeParamToFile(param, file);
         }
@@ -612,27 +626,31 @@ const char* handleConfigPost(AsyncWebServerRequest* request)
     repaintDisplay();
     return "";
 }
-void SetupAsyncServer()
+void setupAsyncServer()
 {
     Serial << __FUNCTION__ << endl;
     server.reset();
     // Route for root / web page
     server.on("/", HTTP_GET, [](AsyncWebServerRequest * request)
     {
-        request->send(SPIFFS, "/index.html", String(), false, processor);
+        request->send(SPIFFS, "/index.html", String("text/html"), false, processor);
     });
-
+    server.on("/config.txt", HTTP_GET, [](AsyncWebServerRequest * request)
+    {
+        request->send(SPIFFS, "/config.txt", String("text/html"), false);
+    });
     server.on("/index.html", HTTP_GET, [](AsyncWebServerRequest * request)
     {
-        request->send(SPIFFS, "/index.html", String(), false, processor);
+        request->send(SPIFFS, "/index.html", String("text/html"), false, processor);
     });
     server.on("/index.html", HTTP_POST, [](AsyncWebServerRequest * request)
     {
         handleConfigPost(request);
-        request->send(SPIFFS, "/index.html", String(), false, processor);
+        request->send(SPIFFS, "/index.html", String("text/html"), false, processor);
     });
     server.onNotFound([](AsyncWebServerRequest * request)
     {
+        Serial << "Processing onNotFound!" << endl;
         if(request->method() == HTTP_OPTIONS)
         {
             request->send(200);
@@ -665,8 +683,8 @@ void setupWifiList()
     if(!file)
     {
         Serial.println("There was an error opening the file '/networks.txt' for reading");
-        networks[0].id = "RDZsonde";
-        networks[0].pw = "RDZsonde";
+        networks[0].id = "D-StarBeacon";
+        networks[0].pw = "D-StarBeacon";
         return;
     }
     int i = 0;
@@ -739,236 +757,9 @@ const char* fetchWifiPw(const char* id)
     return NULL;
 }
 
-void enableNetwork(bool enable)
-{
-    if(enable)
-    {
-        MDNS.begin("D-Star Beacon");
-        SetupAsyncServer();
-        MDNS.addService("http", "tcp", 80);
-        //connected = true;
-    }
-}
-
-enum t_wifi_state { WIFI_DISABLED, WIFI_SCAN, WIFI_CONNECT, WIFI_CONNECTED, WIFI_APMODE };
-
-static t_wifi_state wifi_state = WIFI_DISABLED;
-
-// Events used only for debug output right now
-void WiFiEvent(WiFiEvent_t event)
-{
-    Serial.printf("[WiFi-event] event: %d\n", event);
-
-    switch(event)
-    {
-    case SYSTEM_EVENT_WIFI_READY:
-        Serial.println("WiFi interface ready");
-        break;
-    case SYSTEM_EVENT_SCAN_DONE:
-        Serial.println("Completed scan for access points");
-        break;
-    case SYSTEM_EVENT_STA_START:
-        Serial.println("WiFi client started");
-        break;
-    case SYSTEM_EVENT_STA_STOP:
-        Serial.println("WiFi clients stopped");
-        break;
-    case SYSTEM_EVENT_STA_CONNECTED:
-        Serial.println("Connected to access point");
-        break;
-    case SYSTEM_EVENT_STA_DISCONNECTED:
-        Serial.println("Disconnected from WiFi access point");
-        if(wifi_state == WIFI_CONNECT)
-        {
-            // If we get a disconnect event while waiting for connection (as I do sometimes with my FritzBox),
-            // just start from scratch with WiFi scan
-            wifi_state = WIFI_DISABLED;
-            WiFi.disconnect(true);
-        }
-        break;
-    case SYSTEM_EVENT_STA_AUTHMODE_CHANGE:
-        Serial.println("Authentication mode of access point has changed");
-        break;
-    case SYSTEM_EVENT_STA_GOT_IP:
-        Serial.print("Obtained IP address: ");
-        Serial.println(WiFi.localIP());
-        break;
-    case SYSTEM_EVENT_STA_LOST_IP:
-        Serial.println("Lost IP address and IP address is reset to 0");
-        break;
-    case SYSTEM_EVENT_STA_WPS_ER_SUCCESS:
-        Serial.println("WiFi Protected Setup (WPS): succeeded in enrollee mode");
-        break;
-    case SYSTEM_EVENT_STA_WPS_ER_FAILED:
-        Serial.println("WiFi Protected Setup (WPS): failed in enrollee mode");
-        break;
-    case SYSTEM_EVENT_STA_WPS_ER_TIMEOUT:
-        Serial.println("WiFi Protected Setup (WPS): timeout in enrollee mode");
-        break;
-    case SYSTEM_EVENT_STA_WPS_ER_PIN:
-        Serial.println("WiFi Protected Setup (WPS): pin code in enrollee mode");
-        break;
-    case SYSTEM_EVENT_AP_START:
-        Serial.println("WiFi access point started");
-        break;
-    case SYSTEM_EVENT_AP_STOP:
-        Serial.println("WiFi access point  stopped");
-        break;
-    case SYSTEM_EVENT_AP_STACONNECTED:
-        Serial.println("Client connected");
-        break;
-    case SYSTEM_EVENT_AP_STADISCONNECTED:
-        Serial.println("Client disconnected");
-        break;
-    case SYSTEM_EVENT_AP_STAIPASSIGNED:
-        Serial.println("Assigned IP address to client");
-        break;
-    case SYSTEM_EVENT_AP_PROBEREQRECVED:
-        Serial.println("Received probe request");
-        break;
-    case SYSTEM_EVENT_GOT_IP6:
-        Serial.println("IPv6 is preferred");
-        break;
-    case SYSTEM_EVENT_ETH_START:
-        Serial.println("Ethernet started");
-        break;
-    case SYSTEM_EVENT_ETH_STOP:
-        Serial.println("Ethernet stopped");
-        break;
-    case SYSTEM_EVENT_ETH_CONNECTED:
-        Serial.println("Ethernet connected");
-        break;
-    case SYSTEM_EVENT_ETH_DISCONNECTED:
-        Serial.println("Ethernet disconnected");
-        break;
-    case SYSTEM_EVENT_ETH_GOT_IP:
-        Serial.println("Obtained IP address");
-        break;
-    default:
-        break;
-    }
-}
-
-void wifiConnect(int16_t res)
-{
-    Serial.printf("WiFi scan result: found %d networks\n", res);
-
-    // pick best network
-    int bestEntry = -1;
-    int bestRSSI = INT_MIN;
-    uint8_t bestBSSID[6];
-    int32_t bestChannel = 0;
-
-    for(int8_t i = 0; i < res; i++)
-    {
-        String ssid_scan;
-        int32_t rssi_scan;
-        uint8_t sec_scan;
-        uint8_t* BSSID_scan;
-        int32_t chan_scan;
-        WiFi.getNetworkInfo(i, ssid_scan, sec_scan, rssi_scan, BSSID_scan, chan_scan);
-        int networkEntry = fetchWifiIndex(ssid_scan.c_str());
-        if(networkEntry < 0)
-        {
-            continue;
-        }
-        if(rssi_scan <= bestRSSI)
-        {
-            continue;
-        }
-        bestEntry = networkEntry;
-        bestRSSI = rssi_scan;
-        bestChannel = chan_scan;
-        memcpy((void*) &bestBSSID, (void*) BSSID_scan, sizeof(bestBSSID));
-    }
-    WiFi.scanDelete();
-    if(bestEntry >= 0)
-    {
-        Serial.printf("WiFi Connecting BSSID: %02X:%02X:%02X:%02X:%02X:%02X SSID: %s PW %s Channel: %d (RSSI %d)\n", bestBSSID[0], bestBSSID[1], bestBSSID[2], bestBSSID[3], bestBSSID[4], bestBSSID[5],
-                      fetchWifiSSID(bestEntry), fetchWifiPw(bestEntry), bestChannel, bestRSSI);
-        WiFi.begin(fetchWifiSSID(bestEntry), fetchWifiPw(bestEntry), bestChannel, bestBSSID);
-        wifi_state = WIFI_CONNECT;
-    }
-    else
-    {
-        // rescan
-        // wifiStart();
-        WiFi.disconnect(true);
-        wifi_state = WIFI_DISABLED;
-    }
-}
-
-static int wifi_cto;
-
-void loopWifiBackground()
-{
-    //    Serial.printf("WifiBackground: state %d\n", wifi_state);
-    // handle Wifi station mode in background
-
-    if(wifi_state == WIFI_DISABLED)     // stopped => start can
-    {
-        wifi_state = WIFI_SCAN;
-        Serial.println("WiFi start scan");
-        WiFi.scanNetworks(true); // scan in async mode
-    }
-    else if(wifi_state == WIFI_SCAN)
-    {
-        int16_t res = WiFi.scanComplete();
-        if(res == 0 || res == WIFI_SCAN_FAILED)
-        {
-            // retry
-            Serial.println("WiFi restart scan");
-            WiFi.disconnect(true);
-            wifi_state = WIFI_DISABLED;
-            return;
-        }
-        if(res == WIFI_SCAN_RUNNING)
-        {
-            return;
-        }
-        // Scan finished, try to connect
-        wifiConnect(res);
-        wifi_cto = 0;
-    }
-    else if(wifi_state == WIFI_CONNECT)
-    {
-        wifi_cto++;
-        if(WiFi.isConnected())
-        {
-            wifi_state = WIFI_CONNECTED;
-            // update IP in display
-            String localIPstr = WiFi.localIP().toString();
-            Serial << "MyIP:" << localIPstr << endl;
-            config.ipaddr = localIPstr;
-            repaintDisplay();
-            enableNetwork(true);
-        }
-        if(wifi_cto > 20)    // failed, restart scanning
-        {
-            wifi_state = WIFI_DISABLED;
-            WiFi.disconnect(true);
-        }
-    }
-    else if(wifi_state == WIFI_CONNECTED)
-    {
-        if(!WiFi.isConnected())
-        {
-            config.ipaddr = "";
-            repaintDisplay();
-            wifi_state = WIFI_DISABLED;  // restart scan
-            enableNetwork(false);
-            WiFi.disconnect(true);
-        }
-        return;
-    }
-    Serial << "Delay(500)" << endl;
-    delay(500);
-}
-
 void startAP()
 {
     Serial.println("Activating access point mode");
-    wifi_state = WIFI_APMODE;
     WiFi.softAP(networks[0].id.c_str(), networks[0].pw.c_str());
 
     Serial.println("Wait 100 ms for AP_START...");
@@ -976,9 +767,8 @@ void startAP()
     Serial.println(WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(0, 0, 0, 0), IPAddress(255, 255, 255, 0)) ? "Ready" : "Failed!");
 
     IPAddress myIP = WiFi.softAPIP();
-    String myIPstr = myIP.toString();
     config.ipaddr = myIP.toString();
-    repaintDisplay();
+    m_isAp = true;
 }
 String translateEncryptionType(wifi_auth_mode_t encryptionType)
 {
@@ -1001,35 +791,11 @@ String translateEncryptionType(wifi_auth_mode_t encryptionType)
     }
 }
 
-// Wifi modes
-// 0: disabled. directly start initial mode (spectrum or scanner)
-// 1: station mode in background. directly start initial mode (spectrum or scanner)
-// 2: access point mode in background. directly start initial mode (spectrum or scanner)
-// 3: traditional sync. WifiScan. Tries to connect to a network, in case of failure activates AP.
-//    Mode 3 shows more debug information on serial port and display.
 #define MAXWIFIDELAY 20
 
 void loopWifiScan()
 {
-    if(config.wifi == 0)      // no Wifi
-    {
-        wifi_state = WIFI_DISABLED;
-        return;
-    }
-    if(config.wifi == 1)    // station mode, setup in background
-    {
-        wifi_state = WIFI_DISABLED;  // will start scanning in wifiLoopBackgroiund
-        return;
-    }
-    if(config.wifi == 2)    // AP mode, setup in background
-    {
-        startAP();
-        return;
-    }
-    // wifi==3 => original mode with non-async wifi setup
-
     int cnt = 0;
-
     WiFi.disconnect(true);
     WiFi.mode(WIFI_STA);
     int index = -1;
@@ -1082,23 +848,17 @@ void loopWifiScan()
         IPAddress myIP = WiFi.softAPIP();
         Serial.print("AP IP address: ");
         Serial.println(myIP);
-        //        disp.rdis->drawString(0, lastl, "AP:             ");
-        //        disp.rdis->drawString(6 * dispxs, lastl + 1, networks[0].id.c_str());
         delay(3000);
     }
     else
     {
-        Serial.println("");
-        Serial.println("WiFi connected");
-        Serial.println("IP address: ");
+        Serial << endl << "WiFi connected" << endl;
         String localIPstr = WiFi.localIP().toString();
-        Serial.println(localIPstr);
-        //        sonde.setIP(localIPstr.c_str(), false);
-        //        sonde.updateDisplayIP();
-        wifi_state = WIFI_CONNECTED;
+        Serial << "IP address: " << localIPstr << endl;
+        config.ipaddr = localIPstr;
         delay(3000);
     }
-    enableNetwork(true);
+    setupAsyncServer();
 }
 void setup()
 {
@@ -1123,16 +883,13 @@ void setup()
     readConfig();
 
     setupWifiList();
+    loopWifiScan();
 
     radio.reset();
     Serial.print(F("Initializing ... "));
     pinMode(LORA_D2, OUTPUT);
     pinMode(LORA_D1, INPUT);
     checkLoraState(radio.beginFSK(config.qrt, 4.8f, 4.8 * 0.25f, 25.0f, config.txPower, 48, false));
-    //    MorseClient morse(&radio);
-    //    morse.begin(f);
-    //    morse.startSignal();
-    //    morse.print("001");
     checkLoraState(radio.setEncoding(RADIOLIB_ENCODING_NRZ));
     checkLoraState(radio.setDataShaping(RADIOLIB_SHAPING_0_5));
     checkLoraState(radio.setSyncWord(syncWord, sizeof(syncWord)));
@@ -1194,8 +951,6 @@ long getGPSTime()
 }
 void loop()
 {
-    loopWifiBackground();
-
     while(gpsSerial.available() > 0)
     {
         auto ch = gpsSerial.read();
@@ -1253,10 +1008,10 @@ void loop()
             bluetoothXOFF = true;
         }
     }
+
     if(!isPTTPressed &&
        gps.time.isUpdated() &&
        config.beaconInterval &&
-       wifi_state == WIFI_CONNECTED &&
        gps.location.isValid())
     {
         auto newSecond = getGPSTime();
@@ -1286,6 +1041,8 @@ void loop()
     {
         Serial << endl << "RX Stopped" << endl;
         receivedPacket = false;
+        m_afc = radio.getAFCError();
+        Serial << "You are of:" << m_afc << "Hz from carrier.";
         radio.receiveDirect();//reset IRQ flags
         repaintDisplay();
         if(bs.haveHeader())
