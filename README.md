@@ -9,6 +9,7 @@ Simple D-Star transceiver for TTGO T-Beam ESP32 SX1278 written with Platformio.
 * Decodes D-Star RF Header, 20 characters message and and sends DV Slow data payload to the Bluetooth Connection where it could be decoded with RS-MS1A
  * Text messages are working fine
  * Images are loosing synchronization after some time, smaller ones are working fine. ??Freq drift??
+*  Using SX127x AFC which is not yet in the official RadioLib, for the time beeing use my [clone](https://github.com/yeckel/RadioLib) PR in progress.
 
 Currently the D-Star header, D-Star message and D-GPS is properly encoded and sent every 20s.
 
@@ -33,7 +34,7 @@ works GMSK at 4800bits/s fine at +/- 600Hz offset from the carrier frequency.
 * <del> Decode GPS coord?
 * <del> Send same data to serial and BT as IC-705 does (images, text messages)
 * <del> Unite transmitter with receiver into transceiver
-* Use SX1278 AFC (automatic frequency correction) to correct XTAL offset and thermal drifft
+* <del> Use SX1278 AFC (automatic frequency correction) to correct XTAL offset and thermal drifft
 * Create some ??web?? interface for setting 
     * <del>Callsign
     * Coordsinates source
