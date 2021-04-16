@@ -21,12 +21,11 @@ Probably best D-Star info sources:
 
 Have a look in [D-StarReceive](https://github.com/yeckel/D-StarReceive) for complementary receiver.
 
-## Warning
-XTAL on board the SX1278 transceiver module has a random frequency offset which driffts with temperature! The offset could be measured by sending CW and tuning an SDR receiver 
-into that frequency. (Note that CW mode at most radios has an tone offset like 600Hz) From my experience with SX1278 modules and IC-705 TRX
-works GMSK at 4800bits/s fine at +/- 600Hz offset from the carrier frequency.
+### Warning
+XTAL on board the SX1278 transceiver module has a random frequency offset which driffts with temperature! The offset could be measured by sending CW and tuning an SDR receiver into that frequency. (Note that CW mode at most radios has an tone offset like 600Hz) From my experience with SX1278 modules and IC-705 TRX
+works GMSK at 4800bits/s fine at +/- 600Hz offset from the carrier frequency. With AFC (automatic frequency correction) enabled set to this works fine to +/- 12kHz!
 
-**I have currenty just 2 modules and they are 2kHz off frequency!**
+**I have currenty 4 modules and they are up to 4kHz off frequency!**
 
 ## TODO
 * <del> Encode possition from on board GPS
@@ -43,7 +42,10 @@ works GMSK at 4800bits/s fine at +/- 600Hz offset from the carrier frequency.
     * DPRS - symbol
     * <del>beacon period
 * Use D-Star sync frame to get into receive stream (low prio)
-* Implement support for DV fast data
+* Implement support for DV fast data - IC-705 sometimes switches to them even when turned off (SW Bug?)
+* Implement setting RF offset with suggestion from the last AGC run
+* Show when the beacon is running with time to next TX
+* Show GPS coordinates in web and maybe display
 
 ## Notes
 * D-Star SMS message is transmitted in format: ```$$Msg,OK1CHP,OK1LOL,001172ahoj 0xA2, 0xD, 0x0``` no clue what that 001172 means, RS-MS1A app handles it.
