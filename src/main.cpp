@@ -15,7 +15,6 @@
 #include <ESPAsyncWebServer.h>
 #include <SPIFFS.h>
 
-
 #ifndef LORA_IO1
 #define LORA_IO1 LORA_D1 //With board = ttgo-lora32-v21 is the port id different!
 #endif
@@ -61,7 +60,8 @@ struct BeaconConfig
     String callsignSuffix{"1"};
     String dStarMsg{"D-Star Beacon"};
     String dprsMsg{"ESP32 D-Star Beacon"};
-    float qrt{434.800f + 0.00244f};
+    float qrt{434.800f};
+    float offset{0.0f};
     uint beaconInterval{0};
     uint8_t txPower{5};
 };
@@ -469,6 +469,16 @@ String processor(const String& var)
         sprintf(buff, "%7.3f", config.qrt);
         return String(buff);
     }
+    if(var == "Offset")
+    {
+        sprintf(buff, "%.3f", config.offset);
+        return String(buff);
+    }
+    if(var == "AFC")
+    {
+        sprintf(buff, "%.3f", m_afc / 1000);
+        return String(buff);
+    }
     if(var == "dStarMsg")
     {
         return config.dStarMsg;
@@ -564,6 +574,20 @@ const char* handleConfigPost(AsyncWebServerRequest* request)
         }
     }
     {
+        auto param = request->getParam("Offset", true);
+        if(param != nullptr)
+        {
+            auto val = param->value();
+            val.trim();
+            auto freqOffset = String(val).toFloat();
+            if(freqOffset != 0.0f)
+            {
+                config.offset = freqOffset;
+                writeParamToFile(param, file);
+            }
+        }
+    }
+    {
         auto param = request->getParam("PWR", true);
         if(param != nullptr)
         {
@@ -640,6 +664,8 @@ const char* handleConfigPost(AsyncWebServerRequest* request)
     file.flush();
     Serial.printf("Closing file\n");
     file.close();
+    radio.setFrequency(config.qrt + config.offset / 1000);
+    startRX();
     repaintDisplay();
     return "";
 }
