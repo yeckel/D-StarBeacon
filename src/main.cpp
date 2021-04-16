@@ -15,11 +15,19 @@
 #include <ESPAsyncWebServer.h>
 #include <SPIFFS.h>
 
-SX1278 radio = new Module(LORA_CS, LORA_IRQ, LORA_RST, LORA_D1);
+
+#ifndef LORA_IO1
+#define LORA_IO1 LORA_D1 //With board = ttgo-lora32-v21 is the port id different!
+#endif
+#ifndef LORA_IO2
+#define LORA_IO2 LORA_D2
+#endif
+
+SX1278 radio = new Module(LORA_CS, LORA_IRQ, LORA_RST, LORA_IO1);
 MorseClient morse(&radio);
 SSD1306Wire display(0x3c, SDA, SCL, GEOMETRY_128_64);
 TinyGPSPlus gps;
-HardwareSerial gpsSerial(1);
+auto gpsSerial = Serial1;
 BluetoothSerial serialBT;
 AXP20X_Class axp;
 AsyncWebServer server(80);
@@ -267,7 +275,7 @@ void sendBit(uint8_t* sendBuff, uint buffBitPos)
     auto bitPos = buffBitPos % 8;
     bool bit = sendBuff[bytePos] & (0b10000000 >> bitPos);
     //    Serial << bit;
-    digitalWrite(LORA_D2, bit);
+    digitalWrite(LORA_IO2, bit);
 }
 
 void sendPreambleBit()
@@ -341,7 +349,7 @@ void txBit()
 //-------------------------------RX bit routines----------------------------------------
 void rxBit()
 {
-    auto receivedBit = digitalRead(LORA_D2);
+    auto receivedBit = digitalRead(LORA_IO2);
     auto commStopped = bs.appendBit(receivedBit);
     if(commStopped)
     {
@@ -434,7 +442,7 @@ void startRX()
     sa.reset();
     bs.reset();
     radio.setDio0Action(receivedSyncWord);
-    radio.receiveDirect();
+    checkLoraState(radio.receiveDirect());
     Serial << __FUNCTION__ << endl;
 }
 
@@ -887,8 +895,8 @@ void setup()
 
     radio.reset();
     Serial.print(F("Initializing ... "));
-    pinMode(LORA_D2, OUTPUT);
-    pinMode(LORA_D1, INPUT);
+    pinMode(LORA_IO2, OUTPUT);
+    pinMode(LORA_IO1, INPUT);
     checkLoraState(radio.beginFSK(config.qrt, 4.8f, 4.8 * 0.25f, 25.0f, config.txPower, 48, false));
     checkLoraState(radio.setEncoding(RADIOLIB_ENCODING_NRZ));
     checkLoraState(radio.setDataShaping(RADIOLIB_SHAPING_0_5));
@@ -955,6 +963,7 @@ void loop()
     {
         auto ch = gpsSerial.read();
         gps.encode(ch);
+        Serial.write(ch);
     }
     if(gps.location.isValid() != isGPSValid)
     {
