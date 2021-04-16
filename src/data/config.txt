@@ -8,3 +8,4 @@ PWR=5
 Destination=DIRECT
 Repeater=DIRECT
 Companion=CQCQCQ
+Offset=0.0
