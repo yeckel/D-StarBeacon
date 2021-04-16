@@ -23,6 +23,15 @@
 #define LORA_IO2 LORA_D2
 #endif
 
+#if 0
+//Old T-Beam with switch
+#define GPS_TX 12
+#define GPS_RX 15
+#else
+//new T-Beam with axp20x and soft switch
+#define GPS_TX 34
+#define GPS_RX 12
+#endif
 SX1278 radio = new Module(LORA_CS, LORA_IRQ, LORA_RST, LORA_IO1);
 MorseClient morse(&radio);
 SSD1306Wire display(0x3c, SDA, SCL, GEOMETRY_128_64);
@@ -872,7 +881,7 @@ void setup()
 {
     pinMode(BUILTIN_LED, OUTPUT);
     Serial.begin(115200);
-    gpsSerial.begin(9600, SERIAL_8N1, 12, 15);
+    gpsSerial.begin(9600, SERIAL_8N1, 34, 12);
     serialBT.begin("D-Star Beacon");
     sa.setDataOutput(&serialBT);
     display.init();
@@ -963,7 +972,7 @@ void loop()
     {
         auto ch = gpsSerial.read();
         gps.encode(ch);
-        Serial.write(ch);
+        //        Serial.write(ch);
     }
     if(gps.location.isValid() != isGPSValid)
     {
