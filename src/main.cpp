@@ -40,6 +40,10 @@ BluetoothSerial serialBT;
 AXP20X_Class axp;
 AsyncWebServer server(80);
 
+static constexpr uint16_t RX_SCREEN_TIMEOUT_SECONDS{10};
+uint16_t m_RXDataShownSeconds{0};
+bool m_isRxOrTxActive{false};
+
 void checkLoraState(int state)
 {
     if(state != ERR_NONE)
@@ -76,6 +80,7 @@ uint8_t stoppingFrame[] = {0xaa, 0xaa, 0xaa, 0xaa, 0x13, 0x5e};
 static constexpr uint16_t STOPPING_FRAME_BITSIZE{sizeof(stoppingFrame) * 8};
 volatile uint stoppingFramePos{0};
 uint8_t plainDataBTRXBuff[5];
+uint8_t m_dStarMsg[SlowAmbe::DSTAR_MSG_SIZE + 1];
 
 uint8_t dStarTxHeaderData[DSTAR::RF_HEADER_SIZE] = {0x0, 0x0, 0x0, //flag 1,2,3
                                                     0x44, 0x49, 0x52, 0x45, 0x43, 0x54, 0x20, 0x20, //destination callsign
@@ -110,6 +115,7 @@ bool isBTConnected{false};
 bool receivedValidRFHeader{false};
 bool m_isAp{false};
 float m_afc{0.0f};
+uint m_timeToBeacon{0};
 
 // Read line from file, independent of line termination (LF or CR LF)
 String readLine(Stream& stream)
@@ -243,8 +249,8 @@ void repaintDisplay()
     display.drawString(0, 10, "CS:" + config.callsign);
     display.drawString(67, 10, "CP:" + config.companion);
     display.drawLine(0, 21, 128, 21);
-    char buffHeader[10];
-    if(receivedValidRFHeader)
+    char buffHeader[20];
+    if(receivedValidRFHeader && m_RXDataShownSeconds)
     {
         //callsign
         memcpy(buffHeader, dStarRxHeaderData + 27, 8);
@@ -262,18 +268,19 @@ void repaintDisplay()
         memcpy(buffHeader, dStarRxHeaderData + 19, 8);
         buffHeader[8] = 0x00;
         display.drawStringf(65, 32, buff, "Cp:%s", buffHeader);
+        //D-Star msg
+        display.drawStringf(0, 42, buff, "Msg:%s", m_dStarMsg);
         //AFC value
         display.drawStringf(0, 52, buff, "f er: %.1f kHz", m_afc / 1000);
+        //Display timeout
+        display.drawStringf(70, 52, buff, "to: %d s", m_RXDataShownSeconds);
     }
     else
     {
-        display.drawString(0, 33, (m_isAp ? "AP:" : "IP:") + config.ipaddr);
-        display.drawString(0, 43, "ssid:" + (m_isAp ? WiFi.softAPSSID() : WiFi.SSID()));
-    }
-    if(sa.haveDStarMsg())
-    {
-        auto m = (const char*)sa.getDStarMsg();
-        display.drawStringf(0, 42, buff, "Msg:%s", m);
+        display.drawString(0, 22, (m_isAp ? "AP:" : "IP:") + config.ipaddr);
+        display.drawString(0, 32, "ssid:" + (m_isAp ? WiFi.softAPSSID() : WiFi.SSID()));
+        display.drawStringf(0, 42, buff, "lat: %07.4f, lon:%08.4f", gps.location.lat(), gps.location.lng());
+        display.drawStringf(0, 52, buff, "beacon in: %d s", config.beaconInterval ? m_timeToBeacon : 0);
     }
     display.display();
 }
@@ -329,7 +336,7 @@ void sendStoppingFrameBit()
     sendBit(stoppingFrame, stoppingFramePos);
     stoppingFramePos++;
 }
-
+//--------------------------------Interrupt handler-------------------------------------
 void txBit()
 {
     if(preambleBitPos < PREAMBLE_BITSIZE)
@@ -352,10 +359,11 @@ void txBit()
     else
     {
         radio.clearDio1Action();
+        m_isRxOrTxActive = false;
         stopTx = true;
     }
 }
-//-------------------------------RX bit routines----------------------------------------
+
 void rxBit()
 {
     auto receivedBit = digitalRead(LORA_IO2);
@@ -363,14 +371,15 @@ void rxBit()
     if(commStopped)
     {
         radio.clearDio1Action();
+        m_isRxOrTxActive = false;
         receivedPacket = true;
     }
 }
-//--------------------------------Interrupt handler-------------------------------------
 
 void receivedSyncWord(void)
 {
     radio.setDio1Action(rxBit);
+    m_isRxOrTxActive = true;
 }
 //----------------------------------------------------------------------------------------
 void printHeader(uint8_t* rfHeader)
@@ -433,7 +442,6 @@ void prepareDPRS(const String& data)
 void startTX()
 {
     isPTTPressed = true;
-    repaintDisplay();
     prepareHeader();
     sa.reset();
     bs.reset();
@@ -441,13 +449,13 @@ void startTX()
     ambeDataBitPos = SlowAmbe::SLOW_AMBE_BITSIZE;//to run into data fetch immediately
     radio.clearDio0Action();
     radio.setDio1Action(txBit);
+    m_isRxOrTxActive = true;
     checkLoraState(radio.transmitDirect());
     Serial << __FUNCTION__ << endl;
 }
 void startRX()
 {
     isPTTPressed = false;
-    repaintDisplay();
     sa.reset();
     bs.reset();
     radio.setDio0Action(receivedSyncWord);
@@ -666,7 +674,6 @@ const char* handleConfigPost(AsyncWebServerRequest* request)
     file.close();
     radio.setFrequency(config.qrt + config.offset / 1000);
     startRX();
-    repaintDisplay();
     return "";
 }
 void setupAsyncServer()
@@ -915,7 +922,8 @@ void setup()
     display.setTextAlignment(TEXT_ALIGN_LEFT);
     display.setFont(ArialMT_Plain_10);
     bs.setHeaderBuffer(headerRXTXBuffer, DSTAR::RF_HEADER_SIZE * 2); //TODO refactore to constrctor
-
+    memset(m_dStarMsg, 0x20, SlowAmbe::DSTAR_MSG_SIZE);
+    m_dStarMsg[SlowAmbe::DSTAR_MSG_SIZE] = 0x00;
     Serial.println("Initializing SPIFFS");
     if(!SPIFFS.begin(true))
     {
@@ -936,8 +944,6 @@ void setup()
     checkLoraState(radio.setEncoding(RADIOLIB_ENCODING_NRZ));
     checkLoraState(radio.setDataShaping(RADIOLIB_SHAPING_0_5));
     checkLoraState(radio.setSyncWord(syncWord, sizeof(syncWord)));
-
-    repaintDisplay();
 
     startRX();
 }
@@ -992,8 +998,20 @@ long getGPSTime()
     }
     return t_of_day;
 }
+
+auto m_lastTime = millis();
 void loop()
 {
+    //run each 1s
+    if(millis() - m_lastTime > 1000)
+    {
+        m_lastTime = millis();
+        m_RXDataShownSeconds = m_RXDataShownSeconds > 0 ? m_RXDataShownSeconds - 1 : m_RXDataShownSeconds;
+        if(!m_isRxOrTxActive)
+        {
+            repaintDisplay();
+        }
+    }
     while(gpsSerial.available() > 0)
     {
         auto ch = gpsSerial.read();
@@ -1003,12 +1021,10 @@ void loop()
     if(gps.location.isValid() != isGPSValid)
     {
         isGPSValid = gps.location.isValid();
-        repaintDisplay();
     }
     if(serialBT.connected() != isBTConnected)
     {
         isBTConnected =  serialBT.connected();
-        repaintDisplay();
     }
 
     if(!sa.isBufferFull())
@@ -1068,6 +1084,10 @@ void loop()
                                          gps.location.lat(), gps.location.lng(), gps.altitude.feet(),
                                          config.dprsMsg));
         }
+        else
+        {
+            m_timeToBeacon = config.beaconInterval - (newSecond - lastBEaconTime);
+        }
     }
     if(!sa.comBuffer.isEmpty() && !isPTTPressed)
     {
@@ -1085,13 +1105,17 @@ void loop()
     {
         Serial << endl << "RX Stopped" << endl;
         receivedPacket = false;
+        m_RXDataShownSeconds = RX_SCREEN_TIMEOUT_SECONDS;
         m_afc = radio.getAFCError();
         Serial << "You are of:" << m_afc << "Hz from carrier.";
         radio.receiveDirect();//reset IRQ flags
-        repaintDisplay();
         if(bs.haveHeader())
         {
             decodeHeader(headerRXTXBuffer);
+        }
+        if(sa.haveDStarMsg())
+        {
+            memcpy(m_dStarMsg, sa.getDStarMsg(), SlowAmbe::DSTAR_MSG_SIZE);
         }
         startRX();
     }
