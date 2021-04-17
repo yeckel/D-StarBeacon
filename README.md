@@ -36,16 +36,15 @@ works GMSK at 4800bits/s fine at +/- 600Hz offset from the carrier frequency. Wi
 * <del> Use SX1278 AFC (automatic frequency correction) to correct XTAL offset and thermal drifft
 * Create some ??web?? interface for setting 
     * <del>Callsign
-    * Coordsinates source
     * <del>D-Star message
     * <del>DPRS - message
     * DPRS - symbol
     * <del>beacon period
 * Use D-Star sync frame to get into receive stream (low prio)
 * Implement support for DV fast data - IC-705 sometimes switches to them even when turned off (SW Bug?)
-* Implement setting RF offset with suggestion from the last AGC run
-* Show when the beacon is running with time to next TX
-* Show GPS coordinates in web and maybe display
+* <del>Implement setting RF offset with suggestion from the last AGC run
+* <del>Show when the beacon is running with time to next TX
+* <del>Show GPS coordinates in web and maybe display
 
 ## Notes
 * D-Star SMS message is transmitted in format: ```$$Msg,OK1CHP,OK1LOL,001172ahoj 0xA2, 0xD, 0x0``` no clue what that 001172 means, RS-MS1A app handles it.
