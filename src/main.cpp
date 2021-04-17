@@ -99,9 +99,9 @@ uint8_t history[DSTAR::RF_HEADER_SIZE * 8];  //buffer for viterbi decoding (larg
 
 uint8_t payloadData[SlowAmbe::SLOW_AMBE_SIZE] = {0x4d, 0xb2, 0x44, 0x12, 0x03, 0x68, 0x14, 0x64, 0x13, 0x66, 0x66, 0x66};//first 9 from real packet
 
-SlowAmbe sa;
-DSTAR dStar;
-BitSlicer bs;
+SlowAmbe m_slowAmbe;
+DSTAR m_dStarHeaderCoder;
+BitSlicer m_bitSlicer;
 
 volatile uint ambeDataBitPos{0};
 bool isFirstAmbe{true};
@@ -312,7 +312,7 @@ void fetchNextPayloadData()
 {
     uint32_t data;
     uint8_t* p_data{(uint8_t*)& data};
-    sa.getNextData(data);
+    m_slowAmbe.getNextData(data);
     memcpy(payloadData + 9, p_data, 3); //using just last 3 bytes in slowAmbeData and 3 first bytes from data
     ambeDataBitPos = 0;
     isFirstAmbe = false;
@@ -347,7 +347,7 @@ void txBit()
     {
         sendHeaderBit();
     }
-    else if(!sa.comBuffer.isEmpty() ||
+    else if(!m_slowAmbe.comBuffer.isEmpty() ||
             ambeDataBitPos < SlowAmbe::SLOW_AMBE_BITSIZE)
     {
         sendPayloadBit();
@@ -367,7 +367,7 @@ void txBit()
 void rxBit()
 {
     auto receivedBit = digitalRead(LORA_IO2);
-    auto commStopped = bs.appendBit(receivedBit);
+    auto commStopped = m_bitSlicer.appendBit(receivedBit);
     if(commStopped)
     {
         radio.clearDio1Action();
@@ -407,22 +407,22 @@ void prepareHeader()
     memcpy(dStarTxHeaderData + 3 + 16, config.companion.c_str(), min(int(config.companion.length()), 8));
     memcpy(dStarTxHeaderData + 3 + 24, config.callsign.c_str(), min(int(config.callsign.length()), 8));
     printHeader(dStarTxHeaderData);
-    dStar.add_crc(dStarTxHeaderData);
-    dStar.convolution(dStarTxHeaderData, headerRXTXBuffer);   //source, dest
-    dStar.interleave(headerRXTXBuffer);
-    dStar.pseudo_random(headerRXTXBuffer, DSTAR::RF_HEADER_TRANSFER_BITSIZE);
+    m_dStarHeaderCoder.add_crc(dStarTxHeaderData);
+    m_dStarHeaderCoder.convolution(dStarTxHeaderData, headerRXTXBuffer);   //source, dest
+    m_dStarHeaderCoder.interleave(headerRXTXBuffer);
+    m_dStarHeaderCoder.pseudo_random(headerRXTXBuffer, DSTAR::RF_HEADER_TRANSFER_BITSIZE);
 }
 
 void decodeHeader(uint8_t* bufferConv)
 {
-    dStar.pseudo_random(bufferConv, 660);
-    dStar.deInterleave(bufferConv);
-    dStar.viterbi(bufferConv, history, dStarRxHeaderData); //decode data
+    m_dStarHeaderCoder.pseudo_random(bufferConv, 660);
+    m_dStarHeaderCoder.deInterleave(bufferConv);
+    m_dStarHeaderCoder.viterbi(bufferConv, history, dStarRxHeaderData); //decode data
 
     Serial << "Nb errors:";
-    Serial << int(dStar.acc_error[1][0]) << endl;    //print nb errors
+    Serial << int(m_dStarHeaderCoder.acc_error[1][0]) << endl;    //print nb errors
 
-    auto isCrcFine = dStar.check_crc(dStarRxHeaderData);
+    auto isCrcFine = m_dStarHeaderCoder.check_crc(dStarRxHeaderData);
     Serial << "Checking crc: " << isCrcFine << endl;    //crc testing
 
     if(isCrcFine)
@@ -433,19 +433,19 @@ void decodeHeader(uint8_t* bufferConv)
 }
 void prepareDPRS(const String& data)
 {
-    auto crc = dStar.calcCCITTCRC((uint8_t*)data.c_str(), 0, data.length());
+    auto crc = m_dStarHeaderCoder.calcCCITTCRC((uint8_t*)data.c_str(), 0, data.length());
     String dprs = String("$$CRC" + String(crc, HEX) + "," + data);
     Serial << dprs;
-    sa.setDPRS((uint8_t*)dprs.c_str(), dprs.length());
+    m_slowAmbe.setDPRS((uint8_t*)dprs.c_str(), dprs.length());
 }
 
 void startTX()
 {
     isPTTPressed = true;
     prepareHeader();
-    sa.reset();
-    bs.reset();
-    sa.setMSG(config.dStarMsg);
+    m_slowAmbe.reset();
+    m_bitSlicer.reset();
+    m_slowAmbe.setMSG(config.dStarMsg);
     ambeDataBitPos = SlowAmbe::SLOW_AMBE_BITSIZE;//to run into data fetch immediately
     radio.clearDio0Action();
     radio.setDio1Action(txBit);
@@ -456,8 +456,8 @@ void startTX()
 void startRX()
 {
     isPTTPressed = false;
-    sa.reset();
-    bs.reset();
+    m_slowAmbe.reset();
+    m_bitSlicer.reset();
     radio.setDio0Action(receivedSyncWord);
     checkLoraState(radio.receiveDirect());
     Serial << __FUNCTION__ << endl;
@@ -914,14 +914,14 @@ void setup()
 {
     pinMode(BUILTIN_LED, OUTPUT);
     Serial.begin(115200);
-    gpsSerial.begin(9600, SERIAL_8N1, 34, 12);
+    gpsSerial.begin(9600, SERIAL_8N1, GPS_TX, GPS_RX);
     serialBT.begin("D-Star Beacon");
-    sa.setDataOutput(&serialBT);
+    m_slowAmbe.setDataOutput(&serialBT);
     display.init();
     display.flipScreenVertically();
     display.setTextAlignment(TEXT_ALIGN_LEFT);
     display.setFont(ArialMT_Plain_10);
-    bs.setHeaderBuffer(headerRXTXBuffer, DSTAR::RF_HEADER_SIZE * 2); //TODO refactore to constrctor
+    m_bitSlicer.setHeaderBuffer(headerRXTXBuffer, DSTAR::RF_HEADER_SIZE * 2); //TODO refactore to constrctor
     memset(m_dStarMsg, 0x20, SlowAmbe::DSTAR_MSG_SIZE);
     m_dStarMsg[SlowAmbe::DSTAR_MSG_SIZE] = 0x00;
     Serial.println("Initializing SPIFFS");
@@ -1027,11 +1027,11 @@ void loop()
         isBTConnected =  serialBT.connected();
     }
 
-    if(!sa.isBufferFull())
+    if(!m_slowAmbe.isBufferFull())
     {
         //if at least half the buffer capacity is empty, request more data
         if(isPTTPressed &&
-           sa.isHalfBufferEmpty() &&
+           m_slowAmbe.isHalfBufferEmpty() &&
            bluetoothXOFF)
         {
             bluetoothXOFF = false;
@@ -1047,7 +1047,7 @@ void loop()
             if(readBTByte == sizeof(plainDataBTRXBuff))
             {
                 //                Serial << "Adding: 5 " << endl;
-                sa.setDPRS(plainDataBTRXBuff, sizeof(plainDataBTRXBuff));
+                m_slowAmbe.setDPRS(plainDataBTRXBuff, sizeof(plainDataBTRXBuff));
                 readBTByte = 0;
                 break;
             }
@@ -1055,7 +1055,7 @@ void loop()
         if(readBTByte != 0)
         {
             //            Serial << "Adding: " << uint(readBTByte) << endl;
-            sa.setDPRS(plainDataBTRXBuff, readBTByte);
+            m_slowAmbe.setDPRS(plainDataBTRXBuff, readBTByte);
             readBTByte = 0;
         }
     }
@@ -1089,7 +1089,7 @@ void loop()
             m_timeToBeacon = config.beaconInterval - (newSecond - lastBEaconTime);
         }
     }
-    if(!sa.comBuffer.isEmpty() && !isPTTPressed)
+    if(!m_slowAmbe.comBuffer.isEmpty() && !isPTTPressed)
     {
         startTX();
     }
@@ -1109,24 +1109,24 @@ void loop()
         m_afc = radio.getAFCError();
         Serial << "You are of:" << m_afc << "Hz from carrier.";
         radio.receiveDirect();//reset IRQ flags
-        if(bs.haveHeader())
+        if(m_bitSlicer.haveHeader())
         {
             decodeHeader(headerRXTXBuffer);
         }
-        if(sa.haveDStarMsg())
+        if(m_slowAmbe.haveDStarMsg())
         {
-            memcpy(m_dStarMsg, sa.getDStarMsg(), SlowAmbe::DSTAR_MSG_SIZE);
+            memcpy(m_dStarMsg, m_slowAmbe.getDStarMsg(), SlowAmbe::DSTAR_MSG_SIZE);
         }
         startRX();
     }
-    if(bs.isEvenDataReady())
+    if(m_bitSlicer.isEvenDataReady())
     {
-        auto data = bs.getEvenData();
-        sa.receiveData(data + 9);
+        auto data = m_bitSlicer.getEvenData();
+        m_slowAmbe.receiveData(data + 9);
     }
-    if(bs.isOddDataReady())
+    if(m_bitSlicer.isOddDataReady())
     {
-        auto data = bs.getOddData();
-        sa.receiveData(data + 9);
+        auto data = m_bitSlicer.getOddData();
+        m_slowAmbe.receiveData(data + 9);
     }
 }
