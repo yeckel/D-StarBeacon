@@ -1,4 +1,4 @@
-#include "SlowAmbe.h"
+#include "DStarDV.h"
 //#include <iostream>
 #include <string.h>
 #include <Streaming.h>
@@ -14,6 +14,8 @@ namespace
     static constexpr uint8_t PKT_TYPE_SQUELCH{0x20};
     static constexpr uint8_t PKT_TYPE_FILL{0x60};
     static constexpr uint8_t FILLER_BYTE{0x66};
+    static constexpr uint8_t FAST_DATA_SHORT{0x80}; //fast data short
+    static constexpr uint8_t FAST_DATA_LONG{0x90}; //fast data long
     static constexpr uint8_t BYTES_PER_PACKET{5}; //2+3
     static constexpr uint32_t syncFrame{0x0068b4aa};//101010101011010001101000 every 1st and 21th !!DATA!! frame
 }
@@ -21,7 +23,7 @@ uint8_t min(uint8_t a, uint8_t b)
 {
     return a <= b ? a : b;
 }
-void SlowAmbe::storeHeaderData(uint8_t* buff, bool isFirst)
+void DStarDV::storeHeaderData(uint8_t* buff, bool isFirst)
 {
     if(m_haveMsg)
     {
@@ -40,7 +42,7 @@ void SlowAmbe::storeHeaderData(uint8_t* buff, bool isFirst)
 }
 
 
-void SlowAmbe::sendPlainData(uint8_t* buff, bool isFirst)
+void DStarDV::sendPlainData(uint8_t* buff, bool isFirst)
 {
     uint8_t cnt = isFirst ?
                   min(dataLen, 2) ://first line max 2 bytes
@@ -57,21 +59,27 @@ void SlowAmbe::sendPlainData(uint8_t* buff, bool isFirst)
     }
 }
 
-void SlowAmbe::pushScrambled(uint32_t data)
+void DStarDV::pushScrambled(uint32_t data)
 {
     uint8_t* p_data{(uint8_t*)& data};
     scrambleReverseOutput(p_data, 3);
     comBuffer.push(data);
 }
 
-void SlowAmbe::setDataOutput(Stream* outputStream)
+void DStarDV::setDataOutput(Stream* outputStream)
 {
     m_outputStream = outputStream;
 }
 
-void SlowAmbe::receiveData(uint8_t* buff)
+void DStarDV::receiveData(uint8_t* buff)
 {
-    scrambleReverseInput(buff, 3);
+    scrambleReverseInput(buff, 12);
+    for(uint i = 0; i < 12; i++)
+    {
+        Serial << "0x" << _HEX(buff[i]) << ", ";
+    }
+    Serial << "   ";
+    buff = buff + 9;
     if(m_isEven)
     {
         dataLen = (buff[0] & PKT_LEN_MAP);
@@ -80,27 +88,28 @@ void SlowAmbe::receiveData(uint8_t* buff)
         {
         case PKT_TYPE_MSG:
             dataLen = 5;
-            //            std::cout << "T";
+            Serial << "T ";
             storeHeaderData(buff, m_isEven);
             break;
         case PKT_TYPE_GPS:
-            //            std::cout << "A";
+            Serial << "A ";
             sendPlainData(buff, m_isEven);
             //            for(uint i = 0; i < 3; i++)
             //            {
-            //                std::cout << "0x" << std::hex << int (buff[i]) << ", ";
+            //                Serial << "0x" << std::hex << int (buff[i]) << ", ";
             //            }
             break;
         case PKT_TYPE_HEADER:
-            //            std::cout << "H";
+            Serial << "H ";
             break;
         case PKT_TYPE_SQUELCH:
-            //            std::cout << "C";
+            Serial << "C ";
             break;
         case PKT_TYPE_FILL:
+            Serial << "F ";
             break;
         default:
-            Serial << "U";//unknown
+            Serial << "U ";//unknown
             for(uint i = 0; i < 3; i++)
             {
                 Serial << "0x" << _HEX(buff[i]) << ", ";
@@ -116,23 +125,24 @@ void SlowAmbe::receiveData(uint8_t* buff)
             switch(dataType)
             {
             case PKT_TYPE_MSG:
-                //            std::cout << "t";
+                Serial << "t ";
                 storeHeaderData(buff, m_isEven);
                 break;
             case PKT_TYPE_GPS:
-                //            std::cout << "a";
+                Serial << "a ";
                 sendPlainData(buff, m_isEven);
                 break;
             case PKT_TYPE_HEADER:
-                //            std::cout << "h";
+                Serial << "h ";
                 break;
             case PKT_TYPE_SQUELCH:
-                //            std::cout << "c";
+                Serial << "c ";
                 break;
             case PKT_TYPE_FILL:
+                Serial << "f ";
                 break;
             default:
-                Serial << "u";//unknown
+                Serial << "u ";//unknown
                 for(uint i = 0; i < 3; i++)
                 {
                     Serial << "0x" << _HEX(buff[i]) << ", ";
@@ -142,10 +152,11 @@ void SlowAmbe::receiveData(uint8_t* buff)
         }
     }
     //    Serial << "  :" << hex << int(buff[0]) << " " << int(buff[1]) << " " << int(buff[2]) << endl;
+    Serial << endl;
     m_isEven = !m_isEven;
 }
 
-void SlowAmbe::reset()
+void DStarDV::reset()
 {
     memset(dStarMsg, 0x20, sizeof(dStarMsg));//spaces
     posMSG = 0;
@@ -154,13 +165,13 @@ void SlowAmbe::reset()
     m_haveMsg = false;
 }
 
-const uint8_t* SlowAmbe::getDStarMsg()
+const uint8_t* DStarDV::getDStarMsg()
 {
     dStarMsg[sizeof(dStarMsg) - 1] = 0x00;//c-string end
     return dStarMsg;
 }
 
-void SlowAmbe::setMSG(const String& msg)
+void DStarDV::setMSG(const String& msg)
 {
     uint8_t buff[20];
     memset(buff, 0x20, sizeof(buff));
@@ -183,7 +194,7 @@ void SlowAmbe::setMSG(const String& msg)
     }
 }
 
-void SlowAmbe::setDPRS(uint8_t* msg, uint size)
+void DStarDV::setDPRS(uint8_t* msg, uint size)
 {
     uint neededPackets = size / BYTES_PER_PACKET;
     if(size % BYTES_PER_PACKET)
@@ -227,7 +238,7 @@ void SlowAmbe::setDPRS(uint8_t* msg, uint size)
     //    Serial << "Size" << comBuffer.size() << endl;
 }
 
-void SlowAmbe::getNextData(uint32_t& data)
+void DStarDV::getNextData(uint32_t& data)
 {
     //first and every 21st packet is sync one
     if(dataCounter  == 21)

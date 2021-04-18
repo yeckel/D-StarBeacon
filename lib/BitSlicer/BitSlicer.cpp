@@ -41,6 +41,7 @@ bool BitSlicer::appendBit(bool bit)
         {
             //            cout << (m_isOdd ? "m_dataBuffOdd[" : "m_dataBuffEven[") << dec << uint(receivedAmbeByteNr) << "]=" << hex << uint(receivedByte) << endl;
             m_dataBuff[receivedAmbeByteNr] = receivedByte;
+            Serial << "0x" << _HEX(receivedByte) << ",";
             receivedAmbeByteNr++;
             if(receivedAmbeByteNr == 12)
             {
@@ -52,9 +53,9 @@ bool BitSlicer::appendBit(bool bit)
                     receivedAmbeByteNr = 0;
                     if(!isSyncVrame)
                     {
-                        //                        Serial << endl << "Sync frame" << endl;
                         return true;
                     }
+                    Serial << "  SYNC" << endl;
                 }
                 else
                 {
@@ -65,6 +66,7 @@ bool BitSlicer::appendBit(bool bit)
                     m_dataBuff = m_isOdd ? m_dataBuffOdd : m_dataBuffEven;
                     receivedAmbeByteNr = 0;
                 }
+                Serial << " nr:" << _DEC(m_dataFrameCounter) << " ";
                 m_dataFrameCounter = m_dataFrameCounter == 20 ? 0 : m_dataFrameCounter + 1;
             }
         }
