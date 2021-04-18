@@ -44,4 +44,5 @@ private:
     uint8_t bitInRxByte{7};
     uint16_t dataFrameCount{0};
     uint16_t headerReceivedBits{0};
+    bool processDataFrame();
 };
