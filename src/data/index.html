@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <link rel="stylesheet" type="text/css" href="style.css">
 </head>
-<body>
+<body onload="selectSuffix()">
 <h1>D-Star beacon</h1>
 <form method="POST" id="ConfigForm" action="/index.html">
     <table>
@@ -31,8 +31,26 @@
             <td><input name="Companion" type="text" maxlength="8" value="%COMPANION%"></td>
         </tr>
         <tr>
-            <td>Callsign suffix (max 4 char)</td>
-            <td><input name="Suffix" type="text" maxlength="4" value="%SUFFIX%"></td>
+            <td>APRS SSID</td>
+            <td><select name="Suffix" id="Suffix">
+                <option value="0">Primary station (none)</option>
+                <option value="1">Generic additional station: -1</option>
+                <option value="2">Generic additional station: -2</option>
+                <option value="3">Generic additional station: -3</option>
+                <option value="4">Generic additional station: -4</option>
+                <option value="5">Other network (D-Star, 3G): -5</option>
+                <option value="6">Satellite: -6</option>
+                <option value="7">Handheld radio: -7</option>
+                <option value="8">Boat/ship: -8</option>
+                <option value="9">Mobile station: -9</option>
+                <option value="10">APRS-IS (no radio): -10</option>
+                <option value="11">Balloon, aircraft, spacecraft: -11</option>
+                <option value="12">APRStt, DTMF,..(one way): -12</option>
+                <option value="13">Weather station: -13</option>
+                <option value="14">Freight vehicle: -14</option>
+                <option value="15">Generic additional station: -15</option>
+            </select>
+            </td>
         </tr>
         <tr>
             <td>QRT [MHz]</td>
@@ -68,7 +86,12 @@
 function msg() {
   document.getElementById("OffsetInput").value = "%AFC%";
 }
-
+function selectSuffix(){
+    var chosenSuffix=%SUFFIX%;
+    if(chosenSuffix >=0 && chosenSuffix <=15){
+        document.getElementById("Suffix").selectedIndex = chosenSuffix;
+    }
+}
 </script>
 </body>
 </html>
