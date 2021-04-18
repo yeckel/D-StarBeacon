@@ -8,7 +8,7 @@
 #include <axp20x.h>
 #include <SPI.h>
 #include <DSTAR.h>
-#include <SlowAmbe.h>
+#include <DStarDV.h>
 #include <Scrambler.h>
 #include <BitSlicer.h>
 #include <WiFi.h>
@@ -82,7 +82,7 @@ uint8_t stoppingFrame[] = {0xaa, 0xaa, 0xaa, 0xaa, 0x13, 0x5e};
 static constexpr uint16_t STOPPING_FRAME_BITSIZE{sizeof(stoppingFrame) * 8};
 volatile uint stoppingFramePos{0};
 uint8_t plainDataBTRXBuff[5];
-uint8_t m_dStarMsg[SlowAmbe::DSTAR_MSG_SIZE + 1];
+uint8_t m_dStarMsg[DStarDV::DSTAR_MSG_SIZE + 1];
 
 uint8_t dStarTxHeaderData[DSTAR::RF_HEADER_SIZE] = {0x0, 0x0, 0x0, //flag 1,2,3
                                                     0x44, 0x49, 0x52, 0x45, 0x43, 0x54, 0x20, 0x20, //destination callsign
@@ -99,9 +99,9 @@ uint8_t headerRXTXBuffer[DSTAR::RF_HEADER_SIZE * 2];
 volatile uint headerBitPos{0};
 uint8_t history[DSTAR::RF_HEADER_SIZE * 8];  //buffer for viterbi decoding (large buffer need)
 
-uint8_t payloadData[SlowAmbe::SLOW_AMBE_SIZE] = {0x4d, 0xb2, 0x44, 0x12, 0x03, 0x68, 0x14, 0x64, 0x13, 0x66, 0x66, 0x66};//first 9 from real packet
+uint8_t payloadData[DStarDV::SLOW_AMBE_SIZE] = {0x4d, 0xb2, 0x44, 0x12, 0x03, 0x68, 0x14, 0x64, 0x13, 0x66, 0x66, 0x66};//first 9 from real packet
 
-SlowAmbe m_slowAmbe;
+DStarDV m_slowAmbe;
 DSTAR m_dStarHeaderCoder;
 BitSlicer m_bitSlicer;
 
@@ -325,7 +325,7 @@ void fetchNextPayloadData()
 
 void sendPayloadBit()
 {
-    if(ambeDataBitPos == SlowAmbe::SLOW_AMBE_BITSIZE ||
+    if(ambeDataBitPos == DStarDV::SLOW_AMBE_BITSIZE ||
        isFirstAmbe)
     {
         fetchNextPayloadData();
@@ -353,7 +353,7 @@ void txBit()
         sendHeaderBit();
     }
     else if(!m_slowAmbe.comBuffer.isEmpty() ||
-            ambeDataBitPos < SlowAmbe::SLOW_AMBE_BITSIZE)
+            ambeDataBitPos < DStarDV::SLOW_AMBE_BITSIZE)
     {
         sendPayloadBit();
     }
@@ -451,7 +451,7 @@ void startTX()
     m_slowAmbe.reset();
     m_bitSlicer.reset();
     m_slowAmbe.setMSG(config.dStarMsg);
-    ambeDataBitPos = SlowAmbe::SLOW_AMBE_BITSIZE;//to run into data fetch immediately
+    ambeDataBitPos = DStarDV::SLOW_AMBE_BITSIZE;//to run into data fetch immediately
     radio.clearDio0Action();
     radio.setDio1Action(txBit);
     m_isRxOrTxActive = true;
@@ -966,8 +966,8 @@ void setup()
     display.setTextAlignment(TEXT_ALIGN_LEFT);
     display.setFont(ArialMT_Plain_10);
     m_bitSlicer.setHeaderBuffer(headerRXTXBuffer, DSTAR::RF_HEADER_SIZE * 2); //TODO refactore to constrctor
-    memset(m_dStarMsg, 0x20, SlowAmbe::DSTAR_MSG_SIZE);
-    m_dStarMsg[SlowAmbe::DSTAR_MSG_SIZE] = 0x00;
+    memset(m_dStarMsg, 0x20, DStarDV::DSTAR_MSG_SIZE);
+    m_dStarMsg[DStarDV::DSTAR_MSG_SIZE] = 0x00;
     Serial.println("Initializing SPIFFS");
     if(!SPIFFS.begin(true))
     {
@@ -1158,18 +1158,18 @@ void loop()
         }
         if(m_slowAmbe.haveDStarMsg())
         {
-            memcpy(m_dStarMsg, m_slowAmbe.getDStarMsg(), SlowAmbe::DSTAR_MSG_SIZE);
+            memcpy(m_dStarMsg, m_slowAmbe.getDStarMsg(), DStarDV::DSTAR_MSG_SIZE);
         }
         startRX();
     }
     if(m_bitSlicer.isEvenDataReady())
     {
         auto data = m_bitSlicer.getEvenData();
-        m_slowAmbe.receiveData(data + 9);
+        m_slowAmbe.receiveData(data);
     }
     if(m_bitSlicer.isOddDataReady())
     {
         auto data = m_bitSlicer.getOddData();
-        m_slowAmbe.receiveData(data + 9);
+        m_slowAmbe.receiveData(data);
     }
 }

@@ -4,7 +4,7 @@
 #include <RingBuf.h>
 
 using uint = unsigned int;
-class SlowAmbe
+class DStarDV
 {
 public:
     static constexpr uint8_t SLOW_AMBE_SIZE{12u};//packet size 9 voice plus 3 data
