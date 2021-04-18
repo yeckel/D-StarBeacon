@@ -23,7 +23,7 @@
 #define LORA_IO2 LORA_D2
 #endif
 
-#if 0
+#if 1
 //Old T-Beam with switch
 #define GPS_TX 12
 #define GPS_RX 15
@@ -101,7 +101,7 @@ uint8_t history[DSTAR::RF_HEADER_SIZE * 8];  //buffer for viterbi decoding (larg
 
 uint8_t payloadData[DStarDV::SLOW_AMBE_SIZE] = {0x4d, 0xb2, 0x44, 0x12, 0x03, 0x68, 0x14, 0x64, 0x13, 0x66, 0x66, 0x66};//first 9 from real packet
 
-DStarDV m_slowAmbe;
+DStarDV m_DStarData;
 DSTAR m_dStarHeaderCoder;
 BitSlicer m_bitSlicer;
 
@@ -317,7 +317,7 @@ void fetchNextPayloadData()
 {
     uint32_t data;
     uint8_t* p_data{(uint8_t*)& data};
-    m_slowAmbe.getNextData(data);
+    m_DStarData.getNextData(data);
     memcpy(payloadData + 9, p_data, 3); //using just last 3 bytes in slowAmbeData and 3 first bytes from data
     ambeDataBitPos = 0;
     isFirstAmbe = false;
@@ -352,7 +352,7 @@ void txBit()
     {
         sendHeaderBit();
     }
-    else if(!m_slowAmbe.comBuffer.isEmpty() ||
+    else if(!m_DStarData.comBuffer.isEmpty() ||
             ambeDataBitPos < DStarDV::SLOW_AMBE_BITSIZE)
     {
         sendPayloadBit();
@@ -441,16 +441,16 @@ void prepareDPRS(const String& data)
     auto crc = m_dStarHeaderCoder.calcCCITTCRC((uint8_t*)data.c_str(), 0, data.length());
     String dprs = String("$$CRC" + String(crc, HEX) + "," + data);
     Serial << "DPRS string:" << dprs;
-    m_slowAmbe.setDPRS((uint8_t*)dprs.c_str(), dprs.length());
+    m_DStarData.setDPRS((uint8_t*)dprs.c_str(), dprs.length());
 }
 
 void startTX()
 {
     isPTTPressed = true;
     prepareHeader();
-    m_slowAmbe.reset();
+    m_DStarData.reset();
     m_bitSlicer.reset();
-    m_slowAmbe.setMSG(config.dStarMsg);
+    m_DStarData.setMSG(config.dStarMsg);
     ambeDataBitPos = DStarDV::SLOW_AMBE_BITSIZE;//to run into data fetch immediately
     radio.clearDio0Action();
     radio.setDio1Action(txBit);
@@ -461,7 +461,7 @@ void startTX()
 void startRX()
 {
     isPTTPressed = false;
-    m_slowAmbe.reset();
+    m_DStarData.reset();
     m_bitSlicer.reset();
     radio.setDio0Action(receivedSyncWord);
     checkLoraState(radio.receiveDirect());
@@ -942,7 +942,7 @@ void setup()
     Serial.begin(115200);
     gpsSerial.begin(9600, SERIAL_8N1, GPS_TX, GPS_RX);
     serialBT.begin("D-Star Beacon");
-    m_slowAmbe.setDataOutput(&serialBT);
+    m_DStarData.setDataOutput(&serialBT);
     Wire.begin(SDA, SCL);
     if(!axp.begin(Wire, AXP192_SLAVE_ADDRESS))
     {
@@ -1066,11 +1066,11 @@ void loop()
         //        Serial.write(ch);
     }
 
-    if(!m_slowAmbe.isBufferFull())
+    if(!m_DStarData.isBufferFull())
     {
         //if at least half the buffer capacity is empty, request more data
         if(isPTTPressed &&
-           m_slowAmbe.isHalfBufferEmpty() &&
+           m_DStarData.isHalfBufferEmpty() &&
            bluetoothXOFF)
         {
             bluetoothXOFF = false;
@@ -1086,7 +1086,7 @@ void loop()
             if(readBTByte == sizeof(plainDataBTRXBuff))
             {
                 //                Serial << "Adding: 5 " << endl;
-                m_slowAmbe.setDPRS(plainDataBTRXBuff, sizeof(plainDataBTRXBuff));
+                m_DStarData.setDPRS(plainDataBTRXBuff, sizeof(plainDataBTRXBuff));
                 readBTByte = 0;
                 break;
             }
@@ -1094,7 +1094,7 @@ void loop()
         if(readBTByte != 0)
         {
             //            Serial << "Adding: " << uint(readBTByte) << endl;
-            m_slowAmbe.setDPRS(plainDataBTRXBuff, readBTByte);
+            m_DStarData.setDPRS(plainDataBTRXBuff, readBTByte);
             readBTByte = 0;
         }
     }
@@ -1132,7 +1132,7 @@ void loop()
             m_timeToBeacon = config.beaconInterval - (newSecond - lastBEaconTime);
         }
     }
-    if(!m_slowAmbe.comBuffer.isEmpty() && !isPTTPressed)
+    if(!m_DStarData.comBuffer.isEmpty() && !isPTTPressed)
     {
         startTX();
     }
@@ -1156,20 +1156,20 @@ void loop()
         {
             decodeHeader(headerRXTXBuffer);
         }
-        if(m_slowAmbe.haveDStarMsg())
+        if(m_DStarData.haveDStarMsg())
         {
-            memcpy(m_dStarMsg, m_slowAmbe.getDStarMsg(), DStarDV::DSTAR_MSG_SIZE);
+            memcpy(m_dStarMsg, m_DStarData.getDStarMsg(), DStarDV::DSTAR_MSG_SIZE);
         }
         startRX();
     }
     if(m_bitSlicer.isEvenDataReady())
     {
         auto data = m_bitSlicer.getEvenData();
-        m_slowAmbe.receiveData(data);
+        m_DStarData.receiveData(data);
     }
     if(m_bitSlicer.isOddDataReady())
     {
         auto data = m_bitSlicer.getOddData();
-        m_slowAmbe.receiveData(data);
+        m_DStarData.receiveData(data);
     }
 }
