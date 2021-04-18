@@ -8,6 +8,34 @@ namespace
     static constexpr uint8_t syncFrame[] = {0xaa, 0xb4, 0x68}; //101010101011010001101000 every 1st and 21th !!DATA!! frame
 }
 
+bool BitSlicer::processDataFrame()
+{
+    if(m_dataFrameCounter == 0)
+    {
+        bool isSyncVrame = m_dataBuff[11] == syncFrame[2] &&
+                           m_dataBuff[10] == syncFrame[1] &&
+                           m_dataBuff[9] == syncFrame[0];
+        receivedAmbeByteNr = 0;
+        if(!isSyncVrame)
+        {
+            return true;
+        }
+        Serial << "  SYNC" << endl;
+    }
+    else
+    {
+        m_evenReady |= !m_isOdd;
+        m_oddReady |= m_isOdd;
+        //start storing to the 2nd buffer
+        m_isOdd = !m_isOdd;
+        m_dataBuff = m_isOdd ? m_dataBuffOdd : m_dataBuffEven;
+        receivedAmbeByteNr = 0;
+    }
+    Serial << " nr:" << _DEC(m_dataFrameCounter) << " ";
+    m_dataFrameCounter = m_dataFrameCounter == 20 ? 0 : m_dataFrameCounter + 1;
+    return false;
+}
+
 bool BitSlicer::appendBit(bool bit)
 {
     auto atEnd = tailMatcher.appendAndCheck(bit);
@@ -45,29 +73,7 @@ bool BitSlicer::appendBit(bool bit)
             receivedAmbeByteNr++;
             if(receivedAmbeByteNr == 12)
             {
-                if(m_dataFrameCounter == 0)
-                {
-                    bool isSyncVrame = m_dataBuff[11] == syncFrame[2] &&
-                                       m_dataBuff[10] == syncFrame[1] &&
-                                       m_dataBuff[9] == syncFrame[0];
-                    receivedAmbeByteNr = 0;
-                    if(!isSyncVrame)
-                    {
-                        return true;
-                    }
-                    Serial << "  SYNC" << endl;
-                }
-                else
-                {
-                    m_evenReady |= !m_isOdd;
-                    m_oddReady |= m_isOdd;
-                    //start storing to the 2nd buffer
-                    m_isOdd = !m_isOdd;
-                    m_dataBuff = m_isOdd ? m_dataBuffOdd : m_dataBuffEven;
-                    receivedAmbeByteNr = 0;
-                }
-                Serial << " nr:" << _DEC(m_dataFrameCounter) << " ";
-                m_dataFrameCounter = m_dataFrameCounter == 20 ? 0 : m_dataFrameCounter + 1;
+                return processDataFrame();
             }
         }
     }
