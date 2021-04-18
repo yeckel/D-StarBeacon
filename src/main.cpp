@@ -14,6 +14,7 @@
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
 #include <SPIFFS.h>
+#include <Wire.h>
 
 #ifndef LORA_IO1
 #define LORA_IO1 LORA_D1 //With board = ttgo-lora32-v21 is the port id different!
@@ -110,8 +111,6 @@ volatile bool stopTx{false};
 bool bluetoothXOFF{false};
 volatile bool receivedPacket{false};
 
-bool isGPSValid{false};
-bool isBTConnected{false};
 bool receivedValidRFHeader{false};
 bool m_isAp{false};
 float m_afc{0.0f};
@@ -244,8 +243,8 @@ void repaintDisplay()
     char buff[100];
     sprintf(buff, "f:%7.3fMHz", config.qrt);
     display.drawString(20, 0, buff);
-    display.drawString(90, 0, isGPSValid ? "GPS" : "gps");
-    display.drawString(115, 0, isBTConnected ? "BT" : "bt");
+    display.drawString(90, 0, gps.location.isValid() ? "GPS" : "gps");
+    display.drawString(115, 0, serialBT.connected() ? "BT" : "bt");
     display.drawString(0, 10, "CS:" + config.callsign);
     display.drawString(67, 10, "CP:" + config.companion);
     display.drawLine(0, 21, 128, 21);
@@ -917,6 +916,24 @@ void setup()
     gpsSerial.begin(9600, SERIAL_8N1, GPS_TX, GPS_RX);
     serialBT.begin("D-Star Beacon");
     m_slowAmbe.setDataOutput(&serialBT);
+    Wire.begin(SDA, SCL);
+    if(!axp.begin(Wire, AXP192_SLAVE_ADDRESS))
+    {
+        Serial.println("AXP192 Begin PASS");
+    }
+    else
+    {
+        Serial.println("AXP192 Begin FAIL");
+    }
+    axp.setPowerOutPut(AXP192_LDO2, AXP202_ON);
+    axp.setPowerOutPut(AXP192_LDO3, AXP202_ON);
+    axp.setPowerOutPut(AXP192_DCDC2, AXP202_ON);
+    axp.setPowerOutPut(AXP192_EXTEN, AXP202_ON);
+    axp.setPowerOutPut(AXP192_DCDC1, AXP202_ON);
+    axp.setDCDC1Voltage(3300);
+    axp.adc1Enable(AXP202_VBUS_VOL_ADC1, 1);
+    axp.adc1Enable(AXP202_VBUS_CUR_ADC1, 1);
+    axp.adc1Enable(AXP202_BATT_CUR_ADC1, 1);
     display.init();
     display.flipScreenVertically();
     display.setTextAlignment(TEXT_ALIGN_LEFT);
@@ -1017,14 +1034,6 @@ void loop()
         auto ch = gpsSerial.read();
         gps.encode(ch);
         //        Serial.write(ch);
-    }
-    if(gps.location.isValid() != isGPSValid)
-    {
-        isGPSValid = gps.location.isValid();
-    }
-    if(serialBT.connected() != isBTConnected)
-    {
-        isBTConnected =  serialBT.connected();
     }
 
     if(!m_slowAmbe.isBufferFull())
