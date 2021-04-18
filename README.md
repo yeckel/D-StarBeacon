@@ -38,7 +38,7 @@ works GMSK at 4800bits/s fine at +/- 600Hz offset from the carrier frequency. Wi
     * <del>Callsign
     * <del>D-Star message
     * <del>DPRS - message
-    * DPRS - symbol
+    * <del>DPRS - symbol
     * <del>beacon period
 * Use D-Star sync frame to get into receive stream (low prio)
 * Implement support for DV fast data - IC-705 sometimes switches to them even when turned off (SW Bug?)
