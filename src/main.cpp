@@ -69,6 +69,7 @@ struct BeaconConfig
     float offset{0.0f};
     uint beaconInterval{0};
     uint8_t txPower{5};
+    String aprsSymbol{"/["};
 };
 
 BeaconConfig config;
@@ -193,7 +194,7 @@ void setConfig(const char* cfg)
     }
     if(strcmp(cfg, "Suffix") == 0)
     {
-        config.callsignSuffix = value;
+        config.callsignSuffix = value == "0" ? "" : value;
         return;
     }
     if(strcmp(cfg, "PWR") == 0)
@@ -217,6 +218,11 @@ void setConfig(const char* cfg)
     {
         value.toUpperCase();
         config.repeater = value;
+        return;
+    }
+    if(strcmp(cfg, "aprsSymbol") == 0)
+    {
+        config.aprsSymbol = value;
         return;
     }
     Serial.printf("Invalid config option '%s'=%s \n", cfg, val);
@@ -434,7 +440,7 @@ void prepareDPRS(const String& data)
 {
     auto crc = m_dStarHeaderCoder.calcCCITTCRC((uint8_t*)data.c_str(), 0, data.length());
     String dprs = String("$$CRC" + String(crc, HEX) + "," + data);
-    Serial << dprs;
+    Serial << "DPRS string:" << dprs;
     m_slowAmbe.setDPRS((uint8_t*)dprs.c_str(), dprs.length());
 }
 
@@ -500,7 +506,14 @@ String processor(const String& var)
     }
     if(var == "SUFFIX")
     {
-        return config.callsignSuffix;
+        if(config.callsignSuffix.isEmpty())
+        {
+            return "0";
+        }
+        else
+        {
+            return config.callsignSuffix;
+        }
     }
     if(var == "PWR")
     {
@@ -517,6 +530,10 @@ String processor(const String& var)
     if(var == "COMPANION")
     {
         return String(config.companion);
+    }
+    if(var == "ASYMBOL")
+    {
+        return config.aprsSymbol;
     }
     return String();
 }
@@ -562,7 +579,7 @@ const char* handleConfigPost(AsyncWebServerRequest* request)
         {
             auto val = param->value();
             val.trim();
-            config.callsignSuffix = val;
+            config.callsignSuffix = val == "0" ? "" : val;
             writeParamToFile(param, file);
         }
     }
@@ -653,6 +670,16 @@ const char* handleConfigPost(AsyncWebServerRequest* request)
             val.trim();
             val.toUpperCase();
             config.repeater = val;
+            writeParamToFile(param, file);
+        }
+    }
+    {
+        auto param = request->getParam("aprsSymbol", true);
+        if(param != nullptr)
+        {
+            auto val = param->value();
+            val.trim();
+            config.aprsSymbol = val;
             writeParamToFile(param, file);
         }
     }
@@ -965,7 +992,7 @@ void setup()
     startRX();
 }
 
-String formatDPRSString(String callsign, double lat, double lon, int alt, String message)
+String formatDPRSString(String callsign, String symbol, double lat, double lon, int alt, String message)
 {
     //OK1CHP-1>API705,DSTAR*:!4946.70N/01329.43E-/A=001198TTGO Esp32 rulez!\r
     int deg_lat = int(abs(lat));
@@ -979,11 +1006,14 @@ String formatDPRSString(String callsign, double lat, double lon, int alt, String
 
     char buff_alt[7];
     sprintf(buff_alt, "%06d", alt);
+    symbol = symbol.length() == 2 ? symbol : "/[";
     return String(callsign
                   + ">API705,DSTAR*:!"
-                  + String(buff_lat) + String(min_lat, 2) + ((lat > 0.0f) ? "N" : "S") + "/"
+                  + String(buff_lat) + String(min_lat, 2) + ((lat > 0.0f) ? "N" : "S")
+                  + symbol[0]
                   + String(buff_long) + String(min_lon, 2) + ((lon > 0.0f) ? "E" : "W")
-                  + "-/A=" + String(buff_alt)
+                  + symbol[1]
+                  + "/A=" + String(buff_alt)
                   + message
                   + "\r");
 }
@@ -1089,8 +1119,12 @@ void loop()
            && lastBEaconTime != newSecond)
         {
             lastBEaconTime = newSecond;
-            prepareDPRS(formatDPRSString(config.callsign + "-" + config.callsignSuffix,
-                                         gps.location.lat(), gps.location.lng(), gps.altitude.feet(),
+            prepareDPRS(formatDPRSString(config.callsign +
+                                         (config.callsignSuffix.isEmpty() ? "" : ("-" + config.callsignSuffix)),
+                                         config.aprsSymbol,
+                                         gps.location.lat(),
+                                         gps.location.lng(),
+                                         gps.altitude.feet(),
                                          config.dprsMsg));
         }
         else
