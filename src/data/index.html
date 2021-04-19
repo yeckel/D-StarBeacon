@@ -7,7 +7,7 @@
 </head>
 <body onload="selectSuffix()">
 <h1>D-Star beacon</h1>
-<form method="POST" id="ConfigForm" action="/index.html">
+<form method="POST" id="ConfigForm" action="index.html">
     <table>
         <tbody>
         <tr>
@@ -81,6 +81,14 @@
         <tr>
             <td>BeaconInterval [s](0 off)</td>
             <td><input name="BeaconInterval" type="number" value="%BeaconInterval%"></td>
+        </tr>
+        <tr>
+            <td>Use DV fast data for TX</td>
+            <td><input type="checkbox" id="useFastData" name="useFastData" %fastDataChecked%></td>
+        </tr>
+        <tr>
+            <td>Use DV fast data for GPS</td>
+            <td><input type="checkbox" id="useFastGPS" name="useFastGPS" %fastGPSChecked%></td>
         </tr>
         </tbody>
     </table>

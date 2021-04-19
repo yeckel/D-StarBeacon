@@ -9,3 +9,5 @@ Destination=DIRECT
 Repeater=DIRECT
 Companion=CQCQCQ
 Offset=0.0
+useFastData=true
+useFastGPS=true
