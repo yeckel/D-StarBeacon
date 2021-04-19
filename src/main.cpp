@@ -187,6 +187,11 @@ void setConfig(const char* cfg)
         }
         return;
     }
+    if(strcmp(cfg, "Offset") == 0)
+    {
+        config.offset = value.toFloat();
+        return;
+    }
     if(strcmp(cfg, "BeaconInterval") == 0)
     {
         config.beaconInterval = value.toInt();
@@ -605,11 +610,8 @@ const char* handleConfigPost(AsyncWebServerRequest* request)
             auto val = param->value();
             val.trim();
             auto freqOffset = String(val).toFloat();
-            if(freqOffset != 0.0f)
-            {
-                config.offset = freqOffset;
-                writeParamToFile(param, file);
-            }
+            config.offset = freqOffset;
+            writeParamToFile(param, file);
         }
     }
     {
