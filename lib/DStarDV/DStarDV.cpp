@@ -1,5 +1,4 @@
 #include "DStarDV.h"
-//#include <iostream>
 #include <string.h>
 #include <Streaming.h>
 #include "Scrambler.h"
@@ -30,8 +29,8 @@ void DStarDV::storeHeaderData(uint8_t* buff, bool isFirst)
         return;
     }
     uint8_t cnt = isFirst ?
-                  min(dataLen, 2) ://first line max 2 bytes
-                  min(dataLen, 3); //2nd line max 3 bytes
+                  2 ://first line max 2 bytes
+                  3; //2nd line max 3 bytes
     uint8_t offset = isFirst ? 1 : 0;
     for(uint8_t i = 0; i < cnt; i++)
     {
@@ -59,6 +58,37 @@ void DStarDV::sendPlainData(uint8_t* buff, bool isFirst)
     }
 }
 
+void DStarDV::sendFastData(uint8_t* buff, bool isFirst)
+{
+    memcpy(m_fastDataPacket[isFirst ? 0 : 1], buff, DSTAR_FRAME_SIZE);
+    if(isFirst)
+    {
+        return;
+    }
+    auto controlByte = m_fastDataPacket[0][9];
+    bool isLong = (controlByte & 0xF0) == FAST_DATA_LONG;
+    uint8_t fastDataSize = (m_fastDataPacket[0][9] & 0x0F) + (isLong ? 16 : 0);
+    memcpy(m_fastDataBuffer + 0, m_fastDataPacket[0] + 10, 2);
+    memcpy(m_fastDataBuffer + 2, m_fastDataPacket[1] + 10, 2);
+    memcpy(m_fastDataBuffer + 4, m_fastDataPacket[0] + 0, 4);
+    memcpy(m_fastDataBuffer + 8, m_fastDataPacket[0] + 5, 4);
+    memcpy(m_fastDataBuffer + 12, m_fastDataPacket[1] + 0, 4);
+    memcpy(m_fastDataBuffer + 16, m_fastDataPacket[1] + 5, 4);
+    memcpy(m_fastDataBuffer + 20, m_syncFrameData, 4);//skipping 5th byte which is 0x02
+    memcpy(m_fastDataBuffer + 24, m_syncFrameData + 5, 4);
+    Serial << endl << "s:" << uint(fastDataSize) << " d:";
+    for(uint i = 0; i < min(DSTAR_MAX_FASTDATA_SIZE, fastDataSize); i++)
+    {
+        char ch = m_fastDataBuffer[i];
+        Serial << "0x" << _HEX(ch) << ", ";
+        if(m_outputStream)
+        {
+            m_outputStream->write(ch);
+        }
+    }
+    Serial << endl;
+}
+
 void DStarDV::pushScrambled(uint32_t data)
 {
     uint8_t* p_data{(uint8_t*)& data};
@@ -73,31 +103,28 @@ void DStarDV::setDataOutput(Stream* outputStream)
 
 void DStarDV::receiveData(uint8_t* buff)
 {
-    scrambleReverseInput(buff, 12);
-    for(uint i = 0; i < 12; i++)
+    //    scrambleReverseInput(buff + 9, 3);
+    scrambleReverseInput(buff, DSTAR_FRAME_SIZE);
+    Serial << "Data " << (m_isEven ? "e" : "o") << ":";
+    for(uint i = 0; i < DSTAR_FRAME_SIZE; i++)
     {
         Serial << "0x" << _HEX(buff[i]) << ", ";
     }
-    Serial << "   ";
-    buff = buff + 9;
+    //    Serial << "   ";
     if(m_isEven)
     {
-        dataLen = (buff[0] & PKT_LEN_MAP);
-        dataType = (buff[0] & PKT_TYPE_MAP);
+        dataLen = (buff[9] & PKT_LEN_MAP);
+        dataType = (buff[9] & PKT_TYPE_MAP);
         switch(dataType)
         {
         case PKT_TYPE_MSG:
-            dataLen = 5;
             Serial << "T ";
-            storeHeaderData(buff, m_isEven);
+            storeHeaderData(buff + 9, m_isEven);
             break;
         case PKT_TYPE_GPS:
             Serial << "A ";
-            sendPlainData(buff, m_isEven);
-            //            for(uint i = 0; i < 3; i++)
-            //            {
-            //                Serial << "0x" << std::hex << int (buff[i]) << ", ";
-            //            }
+            sendPlainData(buff + 9, m_isEven);
+            dataLen = dataLen > 2 ? dataLen - 2 : 0; //first frame has max 2 bytes payload
             break;
         case PKT_TYPE_HEADER:
             Serial << "H ";
@@ -108,52 +135,67 @@ void DStarDV::receiveData(uint8_t* buff)
         case PKT_TYPE_FILL:
             Serial << "F ";
             break;
+        case FAST_DATA_LONG:
+            Serial << "E ";
+        case FAST_DATA_SHORT:
+            Serial << "D ";
+            //            scrambleReverseInput(buff, 9);//last 3 bytes already scrambled
+            sendFastData(buff, m_isEven);
+            break;
         default:
             Serial << "U ";//unknown
-            for(uint i = 0; i < 3; i++)
-            {
-                Serial << "0x" << _HEX(buff[i]) << ", ";
-            }
             break;
         }
     }
     else
     {
-        if(dataLen >= 2)
+        switch(dataType)
         {
-            dataLen -= 2;
-            switch(dataType)
-            {
-            case PKT_TYPE_MSG:
-                Serial << "t ";
-                storeHeaderData(buff, m_isEven);
-                break;
-            case PKT_TYPE_GPS:
-                Serial << "a ";
-                sendPlainData(buff, m_isEven);
-                break;
-            case PKT_TYPE_HEADER:
-                Serial << "h ";
-                break;
-            case PKT_TYPE_SQUELCH:
-                Serial << "c ";
-                break;
-            case PKT_TYPE_FILL:
-                Serial << "f ";
-                break;
-            default:
-                Serial << "u ";//unknown
-                for(uint i = 0; i < 3; i++)
-                {
-                    Serial << "0x" << _HEX(buff[i]) << ", ";
-                }
-                break;
-            }
+        case PKT_TYPE_MSG:
+            Serial << "t ";
+            storeHeaderData(buff + 9, m_isEven);
+            break;
+        case PKT_TYPE_GPS:
+            Serial << "a ";
+            sendPlainData(buff + 9, m_isEven);
+            break;
+        case PKT_TYPE_HEADER:
+            Serial << "h ";
+            break;
+        case PKT_TYPE_SQUELCH:
+            Serial << "c ";
+            break;
+        case PKT_TYPE_FILL:
+            Serial << "f ";
+            break;
+        case FAST_DATA_LONG:
+            Serial << "e ";
+        case FAST_DATA_SHORT:
+            Serial << "d ";
+            //            scrambleReverseInput(buff, 9);//last 3 bytes already scrambled
+            sendFastData(buff, m_isEven);
+            break;
+        default:
+            Serial << "u ";//unknown
+            break;
         }
     }
     //    Serial << "  :" << hex << int(buff[0]) << " " << int(buff[1]) << " " << int(buff[2]) << endl;
     Serial << endl;
     m_isEven = !m_isEven;
+}
+
+void DStarDV::receiveSyncData(uint8_t* buff)
+{
+    Serial << "Sync:";
+    memcpy(m_syncFrameData, buff, DSTAR_FRAME_SIZE);
+    scrambleReverseInput(m_syncFrameData, DSTAR_FRAME_SIZE - 3);
+    m_isEven = true; //after sync comms always even frame
+    for(uint i = 0; i < DSTAR_FRAME_SIZE - 3; i++)
+    {
+        Serial << "0x" << _HEX(m_syncFrameData[i]) << ", ";
+    }
+    Serial << endl;
 }
 
 void DStarDV::reset()

@@ -99,7 +99,7 @@ uint8_t headerRXTXBuffer[DSTAR::RF_HEADER_SIZE * 2];
 volatile uint headerBitPos{0};
 uint8_t history[DSTAR::RF_HEADER_SIZE * 8];  //buffer for viterbi decoding (large buffer need)
 
-uint8_t payloadData[DStarDV::SLOW_AMBE_SIZE] = {0x4d, 0xb2, 0x44, 0x12, 0x03, 0x68, 0x14, 0x64, 0x13, 0x66, 0x66, 0x66};//first 9 from real packet
+uint8_t payloadData[DStarDV::DSTAR_FRAME_SIZE] = {0x4d, 0xb2, 0x44, 0x12, 0x03, 0x68, 0x14, 0x64, 0x13, 0x66, 0x66, 0x66};//first 9 from real packet
 
 DStarDV m_DStarData;
 DSTAR m_dStarHeaderCoder;
@@ -447,6 +447,7 @@ void prepareDPRS(const String& data)
 void startTX()
 {
     isPTTPressed = true;
+    repaintDisplay();
     prepareHeader();
     m_DStarData.reset();
     m_bitSlicer.reset();
@@ -939,7 +940,7 @@ void loopWifiScan()
 void setup()
 {
     pinMode(BUILTIN_LED, OUTPUT);
-    Serial.begin(115200);
+    Serial.begin(1000000);
     gpsSerial.begin(9600, SERIAL_8N1, GPS_TX, GPS_RX);
     serialBT.begin("D-Star Beacon");
     m_DStarData.setDataOutput(&serialBT);
@@ -965,6 +966,7 @@ void setup()
     display.flipScreenVertically();
     display.setTextAlignment(TEXT_ALIGN_LEFT);
     display.setFont(ArialMT_Plain_10);
+    repaintDisplay();//to show something's happening ASAP after power on
     m_bitSlicer.setHeaderBuffer(headerRXTXBuffer, DSTAR::RF_HEADER_SIZE * 2); //TODO refactore to constrctor
     memset(m_dStarMsg, 0x20, DStarDV::DSTAR_MSG_SIZE);
     m_dStarMsg[DStarDV::DSTAR_MSG_SIZE] = 0x00;
@@ -1164,12 +1166,14 @@ void loop()
     }
     if(m_bitSlicer.isEvenDataReady())
     {
-        auto data = m_bitSlicer.getEvenData();
-        m_DStarData.receiveData(data);
+        m_DStarData.receiveData(m_bitSlicer.getEvenData());
     }
     if(m_bitSlicer.isOddDataReady())
     {
-        auto data = m_bitSlicer.getOddData();
-        m_DStarData.receiveData(data);
+        m_DStarData.receiveData(m_bitSlicer.getOddData());
+    }
+    if(m_bitSlicer.isSyncDataReady())
+    {
+        m_DStarData.receiveSyncData(m_bitSlicer.getSyncData());
     }
 }
