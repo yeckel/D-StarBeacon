@@ -70,6 +70,8 @@ struct BeaconConfig
     uint beaconInterval{0};
     uint8_t txPower{5};
     String aprsSymbol{"/["};
+    bool isFastDataEnabled{false};
+    bool isFastGPSEnabled{false};
 };
 
 BeaconConfig config;
@@ -228,6 +230,18 @@ void setConfig(const char* cfg)
     if(strcmp(cfg, "aprsSymbol") == 0)
     {
         config.aprsSymbol = value;
+        return;
+    }
+    if(strcmp(cfg, "useFastData") == 0)
+    {
+        value.toLowerCase();
+        config.isFastDataEnabled = (value == "true");
+        return;
+    }
+    if(strcmp(cfg, "useFastGPS") == 0)
+    {
+        value.toLowerCase();
+        config.isFastGPSEnabled = (value == "true");
         return;
     }
     Serial.printf("Invalid config option '%s'=%s \n", cfg, val);
@@ -541,15 +555,34 @@ String processor(const String& var)
     {
         return config.aprsSymbol;
     }
+    if(var == "fastDataChecked")
+    {
+        if(config.isFastDataEnabled)
+        {
+            return "checked";
+        }
+    }
+    if(var == "fastGPSChecked")
+    {
+        if(config.isFastGPSEnabled)
+        {
+            return "checked";
+        }
+    }
     return String();
+}
+
+void writeParamToFile(const String& name, const String& value, File& file)
+{
+    char buff[100];
+    sprintf(buff, "%s=%s", name.c_str(), value.c_str());
+    int wlen = file.printf("%s\n", buff);
+    Serial.printf("Written: %s %d\n", buff, wlen);
 }
 
 void writeParamToFile(AsyncWebParameter* param, File& file)
 {
-    char buff[100];
-    sprintf(buff, "%s=%s", param->name().c_str(), param->value().c_str());
-    int wlen = file.printf("%s\n", buff);
-    Serial.printf("Written: %s %d\n", buff, wlen);
+    writeParamToFile(param->name().c_str(), param->value().c_str(), file);
 }
 
 const char* handleConfigPost(AsyncWebServerRequest* request)
@@ -695,6 +728,36 @@ const char* handleConfigPost(AsyncWebServerRequest* request)
             val.toUpperCase();
             config.companion = val;
             writeParamToFile(param, file);
+        }
+    }
+    {
+        auto param = request->getParam("useFastData", true);
+        if(param != nullptr)
+        {
+            auto val = param->value();
+            config.isFastDataEnabled = (val == "on");
+            Serial << param->name() << "  " << config.isFastDataEnabled  << endl;
+            writeParamToFile("useFastData", (config.isFastDataEnabled ? "true" : "false"), file);
+        }
+        else
+        {
+            config.isFastDataEnabled  = false;
+            writeParamToFile("useFastData", "false", file);
+        }
+    }
+    {
+        auto param = request->getParam("useFastGPS", true);
+        if(param != nullptr)
+        {
+            auto val = param->value();
+            config.isFastGPSEnabled = (val == "on");
+            Serial << param->name() << "  " << config.isFastGPSEnabled  << endl;
+            writeParamToFile("useFastGPS", (config.isFastGPSEnabled ? "true" : "false"), file);
+        }
+        else
+        {
+            config.isFastDataEnabled  = false;
+            writeParamToFile("useFastGPS", "false", file);
         }
     }
     Serial.printf("Flushing file\n");
