@@ -7,9 +7,10 @@ using uint = unsigned int;
 class DStarDV
 {
 public:
-    static constexpr uint8_t SLOW_AMBE_SIZE{12u};//packet size 9 voice plus 3 data
-    static constexpr uint8_t SLOW_AMBE_BITSIZE{SLOW_AMBE_SIZE * 8};
+    static constexpr uint8_t DSTAR_FRAME_SIZE{12u};//packet size 9 voice plus 3 data
+    static constexpr uint8_t SLOW_AMBE_BITSIZE{DSTAR_FRAME_SIZE * 8};
     static constexpr uint8_t DSTAR_MSG_SIZE{20};//Icom message on the display rotating
+    static constexpr uint8_t DSTAR_MAX_FASTDATA_SIZE{28};
     using AmbeData = uint32_t;//from 4 bytes will use just 3
     void setDataOutput(Stream* outputStream);
     /**
@@ -17,6 +18,7 @@ public:
     * @param buff - three bytes of DV slow data
     */
     void receiveData(uint8_t* buff);
+    void receiveSyncData(uint8_t* buff);
     void reset();
     const uint8_t* getDStarMsg();
     void setMSG(const String& msg);
@@ -46,5 +48,9 @@ private:
     bool m_haveMsg{false};
     void storeHeaderData(uint8_t* buff, bool isFirst);
     void sendPlainData(uint8_t* buff, bool isFirst);
+    void sendFastData(uint8_t* buff, bool isFirst);
     void pushScrambled(uint32_t data);
+    uint8_t m_fastDataPacket[2][DSTAR_FRAME_SIZE];
+    uint8_t m_fastDataBuffer[DSTAR_MAX_FASTDATA_SIZE];
+    uint8_t m_syncFrameData[DSTAR_FRAME_SIZE];
 };

@@ -11,7 +11,7 @@ public:
     static constexpr uint DATA_BITSIZE{96};//96bits == 12 bytes
     static constexpr uint DATA_FRAME_SIZE{DATA_BITSIZE / 8};
     static constexpr uint HEADER_SIZE{(HEADER_BITSIZE + 4) / 8 + 1}; //header 660 + 4 padding to full byte plus viterbi
-    static constexpr uint8_t SLOW_AMBE_SIZE{12u};
+    static constexpr uint8_t DSTAR_FRAME_SIZE{12u};
 
     BitSlicer();
     void reset();
@@ -20,8 +20,10 @@ public:
     bool haveHeader();
     bool isEvenDataReady();
     bool isOddDataReady();
+    bool isSyncDataReady();
     uint8_t* getEvenData();
     uint8_t* getOddData();
+    uint8_t* getSyncData();
 private:
     BitMatcher tailMatcher;
     bool receivedRFHeader{false};
@@ -29,15 +31,16 @@ private:
 
     uint8_t* m_headerBuff{nullptr};
     uint m_headerBuffSize{0};
-    uint8_t m_dataBuffEven[SLOW_AMBE_SIZE];
-    uint8_t m_dataBuffOdd[SLOW_AMBE_SIZE];
+    uint8_t m_dataBuffEven[DSTAR_FRAME_SIZE];
+    uint8_t m_dataBuffOdd[DSTAR_FRAME_SIZE];
+    uint8_t m_dataBuffSync[DSTAR_FRAME_SIZE];
     uint8_t* m_dataBuff = m_dataBuffEven;
     uint8_t m_dataFrameCounter{0};
 
     bool m_isOdd{false};
     bool m_evenReady{false};
     bool m_oddReady{false};
-    uint m_dataBuffSize{0};
+    bool m_syncReady{false};
 
     uint8_t receivedHeaderByteNr{0};
     uint8_t receivedAmbeByteNr{0};

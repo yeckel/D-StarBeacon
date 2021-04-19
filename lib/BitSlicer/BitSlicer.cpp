@@ -18,9 +18,17 @@ bool BitSlicer::processDataFrame()
         receivedAmbeByteNr = 0;
         if(!isSyncVrame)
         {
+            Serial << "Failed sync!";
+            for(uint i = 0; i < DSTAR_FRAME_SIZE; i++)
+            {
+                Serial << _HEX(m_dataBuff[i]) << ",";
+            }
+            Serial << endl;
             return true;
         }
-        Serial << "  SYNC" << endl;
+        memcpy(m_dataBuffSync, m_dataBuff, DSTAR_FRAME_SIZE);
+        m_syncReady = true;
+        //        Serial << "  SYNC" << endl;
     }
     else
     {
@@ -31,7 +39,7 @@ bool BitSlicer::processDataFrame()
         m_dataBuff = m_isOdd ? m_dataBuffOdd : m_dataBuffEven;
         receivedAmbeByteNr = 0;
     }
-    Serial << " nr:" << _DEC(m_dataFrameCounter) << " ";
+    //    Serial << " nr:" << _DEC(m_dataFrameCounter) << " ";
     m_dataFrameCounter = m_dataFrameCounter == 20 ? 0 : m_dataFrameCounter + 1;
     return false;
 }
@@ -69,7 +77,7 @@ bool BitSlicer::appendBit(bool bit)
         {
             //            cout << (m_isOdd ? "m_dataBuffOdd[" : "m_dataBuffEven[") << dec << uint(receivedAmbeByteNr) << "]=" << hex << uint(receivedByte) << endl;
             m_dataBuff[receivedAmbeByteNr] = receivedByte;
-            Serial << "0x" << _HEX(receivedByte) << ",";
+            //            Serial << "0x" << _HEX(receivedByte) << ",";
             receivedAmbeByteNr++;
             if(receivedAmbeByteNr == 12)
             {
@@ -100,6 +108,7 @@ void BitSlicer::reset()
     m_isOdd = false;
     m_evenReady = false;
     m_oddReady = false;
+    m_syncReady = false;
     m_dataBuff = m_dataBuffEven;
     receivedAmbeByteNr = 0;
     m_dataFrameCounter = 0;
@@ -127,6 +136,11 @@ bool BitSlicer::isOddDataReady()
     return m_oddReady;
 }
 
+bool BitSlicer::isSyncDataReady()
+{
+    return m_syncReady;
+}
+
 uint8_t* BitSlicer::getEvenData()
 {
     m_evenReady = false;
@@ -137,4 +151,10 @@ uint8_t* BitSlicer::getOddData()
 {
     m_oddReady = false;
     return m_dataBuffOdd;
+}
+
+uint8_t* BitSlicer::getSyncData()
+{
+    m_syncReady = false;
+    return m_dataBuffSync;
 }
