@@ -15,6 +15,7 @@
 #include <ESPAsyncWebServer.h>
 #include <SPIFFS.h>
 #include <Wire.h>
+#include <NoOut.h>
 
 #ifndef LORA_IO1
 #define LORA_IO1 LORA_D1 //With board = ttgo-lora32-v21 is the port id different!
