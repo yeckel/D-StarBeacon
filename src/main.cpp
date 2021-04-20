@@ -1052,7 +1052,7 @@ void setup()
     Serial.print(F("Initializing ... "));
     pinMode(LORA_IO2, OUTPUT);
     pinMode(LORA_IO1, INPUT);
-    checkLoraState(radio.beginFSK(config.qrt, 4.8f, 4.8 * 0.25f, 25.0f, config.txPower, 48, false));
+    checkLoraState(radio.beginFSK(config.qrt + config.offset / 1000, 4.8f, 4.8 * 0.25f, 25.0f, config.txPower, 48, false));
     checkLoraState(radio.setEncoding(RADIOLIB_ENCODING_NRZ));
     checkLoraState(radio.setDataShaping(RADIOLIB_SHAPING_0_5));
     checkLoraState(radio.setSyncWord(syncWord, sizeof(syncWord)));
