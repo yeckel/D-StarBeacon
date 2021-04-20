@@ -27,7 +27,7 @@ works GMSK at 4800bits/s fine at +/- 600Hz offset from the carrier frequency. Wi
 
 **I have currenty 4 modules and they are up to 4kHz off frequency!**
 
-## TODO
+## TODO and also features
 * <del> Encode possition from on board GPS
 * <del> Decode D-Star header
 * <del> Decode GPS coord?
@@ -40,8 +40,14 @@ works GMSK at 4800bits/s fine at +/- 600Hz offset from the carrier frequency. Wi
     * <del>DPRS - message
     * <del>DPRS - symbol
     * <del>beacon period
-* Use D-Star sync frame to get into receive stream (low prio)
+* <del> Use D-Star sync frame to get into receive stream (low prio)
+   * <del> Using for sync in RX DV fast data
+   * <del> Not possible to start RX without preamble and prefix (SX1278 allows just one prefix)   
 * Implement support for DV fast data - IC-705 sometimes switches to them even when turned off (SW Bug?)
+   * <del> RX
+   * TX
+     * <del> Configuration  enable fast data, enable fast GPS
+     * encode and send
 * <del>Implement setting RF offset with suggestion from the last AGC run
 * <del>Show when the beacon is running with time to next TX
 * <del>Show GPS coordinates in web and maybe display
