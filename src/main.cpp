@@ -1003,6 +1003,24 @@ void loopWifiScan()
     }
     setupAsyncServer();
 }
+long lastBEaconTime{0};
+long getGPSTime()
+{
+    time_t t_of_day{1618227800};
+    struct tm t;
+    if(gps.date.isValid())
+    {
+        t.tm_year = gps.date.year() - 1900;
+        t.tm_mon = gps.date.month() - 1;         // Month, 0 - jan
+        t.tm_mday = gps.date.day();          // Day of the month
+        t.tm_hour = gps.time.hour();
+        t.tm_min =  gps.time.minute();
+        t.tm_sec = gps.time.second();
+        t_of_day = mktime(&t);
+    }
+    return t_of_day;
+}
+//--------------------------------------------------setup()-------------------------------------------
 void setup()
 {
     pinMode(BUILTIN_LED, OUTPUT);
@@ -1048,6 +1066,7 @@ void setup()
     setupWifiList();
     loopWifiScan();
 
+    lastBEaconTime = getGPSTime();
     radio.reset();
     Serial.print(F("Initializing ... "));
     pinMode(LORA_IO2, OUTPUT);
@@ -1086,8 +1105,7 @@ String formatDPRSString(String callsign, String symbol, double lat, double lon, 
                   + "\r");
 }
 
-long lastBEaconTime{0};
-uint8_t readBTByte{0};
+
 void resetTXData()
 {
     preambleBitPos = 0;
@@ -1097,23 +1115,7 @@ void resetTXData()
     isFirstAmbe = true;
 }
 
-long getGPSTime()
-{
-    time_t t_of_day{1618227800};
-    struct tm t;
-    if(gps.date.isValid())
-    {
-        t.tm_year = gps.date.year() - 1900;
-        t.tm_mon = gps.date.month() - 1;         // Month, 0 - jan
-        t.tm_mday = gps.date.day();          // Day of the month
-        t.tm_hour = gps.time.hour();
-        t.tm_min =  gps.time.minute();
-        t.tm_sec = gps.time.second();
-        t_of_day = mktime(&t);
-    }
-    return t_of_day;
-}
-
+uint8_t readBTByte{0};
 auto m_lastTime = millis();
 void loop()
 {
@@ -1182,7 +1184,7 @@ void loop()
        gps.location.isValid())
     {
         auto newSecond = getGPSTime();
-        //        Serial << newSecond << endl;
+        Serial << newSecond << endl;
         if(newSecond % config.beaconInterval == 0
            && lastBEaconTime != newSecond)
         {
@@ -1197,7 +1199,7 @@ void loop()
         }
         else
         {
-            m_timeToBeacon = config.beaconInterval - (newSecond - lastBEaconTime);
+            m_timeToBeacon = config.beaconInterval - newSecond + lastBEaconTime;
         }
     }
     if(!m_DStarData.comBuffer.isEmpty() && !isPTTPressed)
