@@ -18,6 +18,12 @@
 #else
 #define LOGWEB m_noOut
 #endif
+
+#if 0
+#define LOGVOICE  Serial
+#else
+#define LOGVOICE m_noOut
+#endif
 class NoOut: public Stream
 {
     // Print interface

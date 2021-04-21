@@ -109,14 +109,18 @@ void DStarDV::setDataOutput(Stream* outputStream)
 
 void DStarDV::receiveData(uint8_t* buff)
 {
-    //    scrambleReverseInput(buff + 9, 3);
+    for(uint i = 0; i < DSTAR_VOICE_SIZE; i++)
+    {
+        LOGVOICE << "0x" << _HEX(buff[i]) << ", ";
+    }
+    LOGVOICE << endl;
+
     scrambleReverseInput(buff, DSTAR_FRAME_SIZE);
     LOGRX << "Data " << (m_isEven ? "e" : "o") << ":";
     for(uint i = 0; i < DSTAR_FRAME_SIZE; i++)
     {
         LOGRX << "0x" << _HEX(buff[i]) << ", ";
     }
-    //    Serial << "   ";
     if(m_isEven)
     {
         dataLen = (buff[9] & PKT_LEN_MAP);
@@ -192,6 +196,11 @@ void DStarDV::receiveData(uint8_t* buff)
 
 void DStarDV::receiveSyncData(uint8_t* buff)
 {
+    for(uint i = 0; i < DSTAR_VOICE_SIZE; i++)
+    {
+        LOGVOICE << "0x" << _HEX(buff[i]) << ", ";
+    }
+    LOGVOICE << endl;
     LOGRX << "Sync:";
     memcpy(m_syncFrameData, buff, DSTAR_FRAME_SIZE);
     scrambleReverseInput(m_syncFrameData, DSTAR_FRAME_SIZE - 3);
