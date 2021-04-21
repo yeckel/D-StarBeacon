@@ -23,6 +23,12 @@ Probably best D-Star info sources:
 [Slow data](https://www.qsl.net/kb9mwr/projects/dv/dstar/Slow%20Data.pdf)
 [MMDVMHost](https://github.com/g4klx/MMDVMHost)
 
+# Installation
+I'm using [Platformio](https://platformio.org/) for development. Have a look on their great documentation. Simple command ```pio run -t upload``` and ```pio run -t uploadfs``` shall work.
+
+## HW requirement
+The transceiver was developed on TTGO T-Beam 433MHz version with AXP power management. The older one with the manual power switch does work too. However mine has hard time getting GPS fix. Other ESP32 SX1278 boards could be used too, just check pins assignments and modify platformio.ini ```board = ttgo-lora32-v21``` works out of the box.
+
 ### Warning
 XTAL on board the SX1278 transceiver module has a random frequency offset which driffts with temperature! The offset could be measured by sending CW and tuning an SDR receiver into that frequency. (Note that CW mode at most radios has an tone offset like 600Hz) From my experience with SX1278 modules and IC-705 TRX
 works GMSK at 4800bits/s fine at +/- 600Hz offset from the carrier frequency. With AFC (automatic frequency correction) enabled set to this works fine to +/- 12kHz! Don't forget setting our frequency offset in web gui.
