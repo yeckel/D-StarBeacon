@@ -311,7 +311,7 @@ void repaintDisplay()
         display.drawString(0, 22, (m_isAp ? "AP:" : "IP:") + config.ipaddr);
         display.drawString(75, 22, "Batt:" + String(axp.getBattVoltage() / 1000) + "V");
         display.drawString(0, 32, "ssid:" + (m_isAp ? WiFi.softAPSSID() : WiFi.SSID()));
-        display.drawStringf(0, 42, buff, "lat: %07.4f, lon:%08.4f", gps.location.lat(), gps.location.lng());
+        display.drawStringf(0, 42, buff, "LA: %07.4f LO:%08.4f", gps.location.lat(), gps.location.lng());
         display.drawStringf(0, 52, buff, "beacon in: %d s", config.beaconInterval ? m_timeToBeacon : 0);
     }
     display.display();
