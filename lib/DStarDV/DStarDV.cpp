@@ -15,8 +15,7 @@ namespace
     static constexpr uint8_t FILLER_BYTE{0x66};
     static constexpr uint8_t FAST_DATA_SHORT{0x80}; //fast data short
     static constexpr uint8_t FAST_DATA_LONG{0x90}; //fast data long
-    static constexpr uint8_t BYTES_PER_PACKET{5}; //2+3
-    static constexpr uint32_t syncFrame{0x0068b4aa};//101010101011010001101000 every 1st and 21th !!DATA!! frame
+    static constexpr uint8_t syncFrame[DStarDV::DSTAR_FRAME_SIZE] = {0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0xaa, 0xb4, 0x68}; //101010101011010001101000 every 1st and 21th !!DATA!! frame
 }
 uint8_t min(uint8_t a, uint8_t b)
 {
@@ -89,10 +88,16 @@ void DStarDV::sendFastData(uint8_t* buff, bool isFirst)
     SERLOG << endl;
 }
 
-void DStarDV::pushScrambled(uint32_t data)
+void DStarDV::pushScrambled(FrameData data, bool whole)
 {
-    uint8_t* p_data{(uint8_t*)& data};
-    scrambleReverseOutput(p_data, 3);
+    if(whole)
+    {
+        scrambleReverseOutput(data.data, DSTAR_FRAME_SIZE);
+    }
+    else
+    {
+        scrambleReverseOutput(data.data + 9, 3);
+    }
     comBuffer.push(data);
 }
 
@@ -217,40 +222,40 @@ void DStarDV::setMSG(const String& msg)
     uint8_t buff[20];
     memset(buff, 0x20, sizeof(buff));
     memcpy(buff, msg.c_str(), min(sizeof(buff), msg.length()));
-    uint32_t data{0x6666600u};
-    uint8_t* p_data = (uint8_t*)&data;
+    FrameData data;
+    data.fillEmpty();
+    uint8_t* p_data =  data.data + 9;
     for(uint8_t i = 0; i < 4; i++)
     {
-        auto offsetInMsg = BYTES_PER_PACKET * i;
+        auto offsetInMsg = BYTES_PER_PACKET_SLOW * i;
         p_data[0] = PKT_TYPE_MSG | (0xFF & i);
         p_data[1] = msg[0 + offsetInMsg];
         p_data[2] = msg[1 + offsetInMsg];
-        //        Serial << _HEX(data) << endl;
         pushScrambled(data);
         p_data[0] = msg[2 + offsetInMsg];
         p_data[1] = msg[3 + offsetInMsg];
         p_data[2] = msg[4 + offsetInMsg];
         pushScrambled(data);
-        //        Serial << _HEX(data) << endl;
     }
 }
 
-void DStarDV::setDPRS(uint8_t* msg, uint size)
+void DStarDV::setDPRS(uint8_t* msg, uint size, bool useFastDV)
 {
-    uint neededPackets = size / BYTES_PER_PACKET;
-    if(size % BYTES_PER_PACKET)
+    uint neededPackets = size / BYTES_PER_PACKET_SLOW;
+    if(size % BYTES_PER_PACKET_SLOW)
     {
         neededPackets += 1;
     }
-    uint32_t data{0x66666600u};
-    uint8_t* p_data = (uint8_t*)&data;
-    //    Serial << "Needed packets" << neededPackets << endl;
+    FrameData data;
+    data.fillEmpty();
+    uint8_t* p_data = data.data + 9;
+
     for(uint i = 0; i < neededPackets; i++)
     {
-        auto offsetInMsg = BYTES_PER_PACKET * i;
+        auto offsetInMsg = BYTES_PER_PACKET_SLOW * i;
         uint8_t bytesInPkt = (i + 1 < neededPackets) ?
-                             BYTES_PER_PACKET :
-                             size - (neededPackets - 1) * BYTES_PER_PACKET ;
+                             BYTES_PER_PACKET_SLOW :
+                             size - (neededPackets - 1) * BYTES_PER_PACKET_SLOW ;
 
         p_data[0] = PKT_TYPE_GPS | (0xFF & bytesInPkt);
         p_data[1] = msg[0 + offsetInMsg];
@@ -259,8 +264,7 @@ void DStarDV::setDPRS(uint8_t* msg, uint size)
             p_data[2] = msg[1 + offsetInMsg];
         }
         pushScrambled(data);
-        //        Serial << _HEX(data) << endl;
-        data = 0x66666600u;
+        data.fillEmpty();
         if(bytesInPkt >= 3)
         {
             p_data[0] = msg[2 + offsetInMsg];
@@ -274,24 +278,22 @@ void DStarDV::setDPRS(uint8_t* msg, uint size)
             p_data[2] = msg[4 + offsetInMsg];
         }
         pushScrambled(data);
-        //        Serial << _HEX(data) << endl;
     }
-    //    Serial << "Size" << comBuffer.size() << endl;
 }
 
-void DStarDV::getNextData(uint32_t& data)
+DStarDV::FrameData DStarDV::getNextData()
 {
     //first and every 21st packet is sync one
+    FrameData data;
     if(dataCounter  == 21)
     {
         dataCounter = 0;
-        data = syncFrame;
-        //        Serial << "Sync" << endl;
+        memcpy(data.data, syncFrame, sizeof(FrameData));
     }
     else
     {
         comBuffer.lockedPop(data);
-        //        Serial << "Data" << endl;
     }
     dataCounter++;
+    return data;
 }
