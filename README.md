@@ -23,8 +23,50 @@ Probably best D-Star info sources:
 [Slow data](https://www.qsl.net/kb9mwr/projects/dv/dstar/Slow%20Data.pdf)
 [MMDVMHost](https://github.com/g4klx/MMDVMHost)
 
+# Usage
+## Screens
+### Status screen
+<img src="doc/status.png" alt="Standby screen" width="200">
+
+* __RX/TX__ - shows current status 
+* __f__ - current frequency
+* __GPS/gps__ - if it has GPS fix
+* __BT/bt__ - if there is a Bluetooth connection
+* __CS__ - own callsign
+* __CP__ - companion callsing (also target callsign)
+* __IP__ - current IP address to connect to (192.168.4.1 when in AP mode)
+* __ssid__ - used WifiNetwork ssid
+* __LA&LO__ - GPS coordinates
+* __beacon in__ - time to next beacon, or permanent 0 when there is no GPS or beacon is disabled
+* __Batt__ - battery voltage  
+
+### Received screen
+<img src="doc/received.png" alt="Received screen" width="200">
+
+* __Cs__ - heard station callsign
+* __Cp__ - companion callsign (also target)
+* __Rig__ - 4 characters used as RIG id
+* __Ds__ - destination callsign
+* __Msg__ - D-Star 20 characters message
+* __f er__ - frequency offset from the transmitter
+* __to__ -  timeout until the Received screen is shown
+
+### Web interface
+You shall connect to the provided IP address with an browser and set your callsign and so on. The items shall be self-explanatory. Setting is stored locally into the file config.txt
+
+### Sending and receiving images and text messages
+[Video on YouTube](https://www.youtube.com/watch?v=e5j2WmVVSnE)
+
 # Installation
-I'm using [Platformio](https://platformio.org/) for development. Have a look on their great documentation. Simple command ```pio run -t upload``` and ```pio run -t uploadfs``` shall work.
+I'm using [Platformio](https://platformio.org/) for development. Have a look on their great documentation. Simple command ```pio run -t upload``` and ```pio run -t uploadfs``` shall work. Before uploading please configure your callsign in the __src/data/config.txt__ and your WiFi network(s) in __src/data/networks.txt__ The format is:
+```
+ssid network1
+password network1
+ssid network2
+password network2
+...
+```
+If no preconfigured network is found, then the first network from the list is created as local access point.
 
 ## HW requirement
 The transceiver was developed on TTGO T-Beam 433MHz version with AXP power management. The older one with the manual power switch does work too. However mine has hard time getting GPS fix. Other ESP32 SX1278 boards could be used too, just check pins assignments and modify platformio.ini ```board = ttgo-lora32-v21``` works out of the box.
