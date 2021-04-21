@@ -2,9 +2,9 @@
 #include <Stream.h>
 #include <Streaming.h>
 #if 0
-#define SERLOG  Serial
+#define LOGRX  Serial
 #else
-#define SERLOG m_noOut
+#define LOGRX m_noOut
 #endif
 
 #if 0
@@ -13,6 +13,11 @@
 #define LOGTX m_noOut
 #endif
 
+#if 0
+#define LOGWEB  Serial
+#else
+#define LOGWEB m_noOut
+#endif
 class NoOut: public Stream
 {
     // Print interface
