@@ -390,7 +390,7 @@ void txBit()
 void rxBit()
 {
     auto receivedBit = digitalRead(LORA_IO2);
-    Serial << receivedBit;
+    //    Serial << receivedBit;
     auto commStopped = m_bitSlicer.appendBit(receivedBit);
     if(commStopped)
     {
@@ -460,7 +460,7 @@ void prepareDPRS(const String& data)
     auto crc = m_dStarHeaderCoder.calcCCITTCRC((uint8_t*)data.c_str(), 0, data.length());
     String dprs = String("$$CRC" + String(crc, HEX) + "," + data);
     Serial << "DPRS string:" << dprs;
-    m_DStarData.setDPRS((uint8_t*)dprs.c_str(), dprs.length());
+    m_DStarData.setDPRS((uint8_t*)dprs.c_str(), dprs.length(), config.isFastGPSEnabled);
 }
 
 void startTX()
@@ -1135,34 +1135,33 @@ void loop()
         //        Serial.write(ch);
     }
 
-    if(!m_DStarData.isBufferFull())
+    if(m_DStarData.hasSpaceInBuffer())
     {
-        //if at least half the buffer capacity is empty, request more data
+        //if buffer has some space, request more data
         if(isPTTPressed &&
-           m_DStarData.isHalfBufferEmpty() &&
            bluetoothXOFF)
         {
             bluetoothXOFF = false;
             serialBT.write(0x11);//XON
-            Serial << "TX buffer is ready" << endl;
+            Serial << "TX buffer is ready:" << m_DStarData.comBuffer.size() << endl;;
         }
         while(serialBT.available() > 0)
         {
             auto ch = serialBT.read();
-            Serial << "0x" << _HEX(ch) << ", ";
             plainDataBTRXBuff[readBTByte] = ch;
             readBTByte++;
-            if(readBTByte == sizeof(plainDataBTRXBuff))
+            if(readBTByte == DStarDV::BYTES_PER_PACKET_FAST)
             {
+                Serial << "Adding full: " << uint(DStarDV::BYTES_PER_PACKET_FAST) << endl;
                 m_DStarData.setDPRS(plainDataBTRXBuff, sizeof(plainDataBTRXBuff), config.isFastDataEnabled);
                 readBTByte = 0;
                 break;
             }
         }
-        if(readBTByte != 0)//send rest from the buffer
+        if(readBTByte != 0)//send the rest from the buffer
         {
-            Serial << "Adding: " << uint(readBTByte) << endl;
-            m_DStarData.setDPRS(plainDataBTRXBuff, readBTByte);
+            Serial << "Adding rest: " << uint(readBTByte) << endl;
+            m_DStarData.setDPRS(plainDataBTRXBuff, readBTByte, config.isFastDataEnabled);
             readBTByte = 0;
         }
     }
@@ -1170,7 +1169,7 @@ void loop()
     {
         if(!bluetoothXOFF)
         {
-            Serial << "TX buffer is full!!:" << m_DStarData.comBuffer.size() << endl;
+            Serial << "TX buffer is full:" << m_DStarData.comBuffer.size() << endl;
             serialBT.write(0x13);//XOFF
             bluetoothXOFF = true;
         }

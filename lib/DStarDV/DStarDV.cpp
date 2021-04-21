@@ -16,6 +16,7 @@ namespace
     static constexpr uint8_t FAST_DATA_SHORT{0x80}; //fast data short
     static constexpr uint8_t FAST_DATA_LONG{0x90}; //fast data long
     static constexpr uint8_t syncFrame[DStarDV::DSTAR_FRAME_SIZE] = {0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0xaa, 0xb4, 0x68}; //101010101011010001101000 every 1st and 21th !!DATA!! frame
+    static constexpr uint8_t NOISE{0x2}; //magic from protocol spec
 }
 uint8_t min(uint8_t a, uint8_t b)
 {
@@ -239,7 +240,7 @@ void DStarDV::setMSG(const String& msg)
     }
 }
 
-void DStarDV::setDPRS(uint8_t* msg, uint size, bool useFastDV)
+void DStarDV::splitDataSlow(uint8_t* msg, uint size)
 {
     uint neededPackets = size / BYTES_PER_PACKET_SLOW;
     if(size % BYTES_PER_PACKET_SLOW)
@@ -278,6 +279,72 @@ void DStarDV::setDPRS(uint8_t* msg, uint size, bool useFastDV)
             p_data[2] = msg[4 + offsetInMsg];
         }
         pushScrambled(data);
+    }
+}
+
+void DStarDV::splitDataFast(uint8_t* msg, uint size)
+{
+    uint neededPackets = size / BYTES_PER_PACKET_FAST;
+    if(size % BYTES_PER_PACKET_FAST)
+    {
+        neededPackets += 1;
+    }
+    FrameData dataEven, dataOdd;
+
+    LOGTX << "FastData size:" << size << " packet needes:" << neededPackets << endl;
+
+    for(uint i = 0; i < neededPackets; i++)
+    {
+        auto offsetInMsg = BYTES_PER_PACKET_FAST * i;
+        uint8_t bytesInPkt = (i + 1 < neededPackets) ?
+                             BYTES_PER_PACKET_FAST :
+                             size - (neededPackets - 1) * BYTES_PER_PACKET_FAST ;
+        uint8_t message[BYTES_PER_PACKET_FAST];
+        memset(message, 0x66, BYTES_PER_PACKET_FAST);
+        memcpy(message, msg + offsetInMsg, bytesInPkt);
+
+        auto pktType = bytesInPkt > 0x0F ? FAST_DATA_LONG : FAST_DATA_SHORT;
+        auto pktLen  = bytesInPkt > 0x0F ? bytesInPkt - 16 : bytesInPkt;//fast data starts counting from 16 bytes eg 0 == 16
+
+        dataEven.data[9] = (0xF0 & pktType) | (0x0F & pktLen);
+        dataEven.data[4] = NOISE;
+        dataOdd.data[9] = (0xF0 & FAST_DATA_SHORT) | (0x03);//some magic protection byte from doc
+        dataOdd.data[4] = NOISE;
+
+        memcpy(dataEven.data + 10, message + 0, 2);
+        memcpy(dataOdd.data + 10, message + 2, 2);
+        memcpy(dataEven.data + 0, message + 4, 4);
+        memcpy(dataEven.data + 5, message + 8, 4);
+        memcpy(dataOdd.data + 0, message + 12, 4);
+        memcpy(dataOdd.data + 5, message + 16, 4);
+
+        pushScrambled(dataEven, true);
+        LOGTX << "Even:";
+        for(uint i = 0; i < DSTAR_FRAME_SIZE; i++)
+        {
+            char ch = dataEven.data[i];
+            LOGTX << "0x" << _HEX(ch) << ", ";
+        }
+        pushScrambled(dataOdd, true);
+        LOGTX << endl << "Odd:";
+        for(uint i = 0; i < DSTAR_FRAME_SIZE; i++)
+        {
+            char ch = dataOdd.data[i];
+            LOGTX << "0x" << _HEX(ch) << ", ";
+        }
+        LOGTX << endl;
+    }
+}
+
+void DStarDV::setDPRS(uint8_t* msg, uint size, bool useFastDV)
+{
+    if(useFastDV)
+    {
+        splitDataFast(msg, size);
+    }
+    else
+    {
+        splitDataSlow(msg, size);
     }
 }
 
