@@ -84,7 +84,13 @@ uint8_t syncWord[] = {0x55, 0x55, 0x55, 0x55, 0x55, 0x76, 0x50};
 uint8_t stoppingFrame[] = {0xaa, 0xaa, 0xaa, 0xaa, 0x13, 0x5e};
 static constexpr uint16_t STOPPING_FRAME_BITSIZE{sizeof(stoppingFrame) * 8};
 volatile uint stoppingFramePos{0};
-uint8_t plainDataBTRXBuff[5];
+/*
+ * DV fast data could have 28 bytes when sync frame (every 21st) is used too.
+ * Without sync frame one packet has 20 bytes.
+ * DV slow data has 5 bytes per packet, also 4 slow packets.
+ * (One packet is sent with 2 frames)
+*/
+uint8_t plainDataBTRXBuff[DStarDV::BYTES_PER_PACKET_FAST];
 uint8_t m_dStarMsg[DStarDV::DSTAR_MSG_SIZE + 1];
 
 uint8_t dStarTxHeaderData[DSTAR::RF_HEADER_SIZE] = {0x0, 0x0, 0x0, //flag 1,2,3
@@ -102,14 +108,14 @@ uint8_t headerRXTXBuffer[DSTAR::RF_HEADER_SIZE * 2];
 volatile uint headerBitPos{0};
 uint8_t history[DSTAR::RF_HEADER_SIZE * 8];  //buffer for viterbi decoding (large buffer need)
 
-uint8_t payloadData[DStarDV::DSTAR_FRAME_SIZE] = {0x4d, 0xb2, 0x44, 0x12, 0x03, 0x68, 0x14, 0x64, 0x13, 0x66, 0x66, 0x66};//first 9 from real packet
+uint8_t payloadData[DStarDV::DSTAR_FRAME_SIZE];
 
 DStarDV m_DStarData;
 DSTAR m_dStarHeaderCoder;
 BitSlicer m_bitSlicer;
 
-volatile uint ambeDataBitPos{0};
-bool isFirstAmbe{true};
+volatile uint frameDataBitPos{0};
+bool isFirstFrame{true};
 volatile bool isPTTPressed{false};
 volatile bool stopTx{false};
 bool bluetoothXOFF{false};
@@ -315,49 +321,41 @@ void sendBit(uint8_t* sendBuff, uint buffBitPos)
     auto bytePos = buffBitPos / 8;
     auto bitPos = buffBitPos % 8;
     bool bit = sendBuff[bytePos] & (0b10000000 >> bitPos);
-    //    Serial << bit;
     digitalWrite(LORA_IO2, bit);
 }
 
 void sendPreambleBit()
 {
-    //        Serial << "P";
     sendBit(preambleAndBitSync, preambleBitPos);
     preambleBitPos++;
 }
 
 void sendHeaderBit()
 {
-    //        Serial << "H";
     sendBit(headerRXTXBuffer, headerBitPos);
     headerBitPos++;
 }
 
 void fetchNextPayloadData()
 {
-    uint32_t data;
-    uint8_t* p_data{(uint8_t*)& data};
-    m_DStarData.getNextData(data);
-    memcpy(payloadData + 9, p_data, 3); //using just last 3 bytes in slowAmbeData and 3 first bytes from data
-    ambeDataBitPos = 0;
-    isFirstAmbe = false;
+    memcpy(payloadData, m_DStarData.getNextData().data, DStarDV::DSTAR_FRAME_SIZE);
 }
 
 void sendPayloadBit()
 {
-    if(ambeDataBitPos == DStarDV::SLOW_AMBE_BITSIZE ||
-       isFirstAmbe)
+    if(frameDataBitPos == DStarDV::SLOW_AMBE_BITSIZE ||
+       isFirstFrame)
     {
+        isFirstFrame = false;
         fetchNextPayloadData();
+        frameDataBitPos = 0;
     }
-    //        Serial << "A";
-    sendBit(payloadData, ambeDataBitPos);
-    ambeDataBitPos++;
+    sendBit(payloadData, frameDataBitPos);
+    frameDataBitPos++;
 }
 
 void sendStoppingFrameBit()
 {
-    //        Serial << "S";
     sendBit(stoppingFrame, stoppingFramePos);
     stoppingFramePos++;
 }
@@ -373,7 +371,7 @@ void txBit()
         sendHeaderBit();
     }
     else if(!m_DStarData.comBuffer.isEmpty() ||
-            ambeDataBitPos < DStarDV::SLOW_AMBE_BITSIZE)
+            frameDataBitPos < DStarDV::SLOW_AMBE_BITSIZE)
     {
         sendPayloadBit();
     }
@@ -392,6 +390,7 @@ void txBit()
 void rxBit()
 {
     auto receivedBit = digitalRead(LORA_IO2);
+    Serial << receivedBit;
     auto commStopped = m_bitSlicer.appendBit(receivedBit);
     if(commStopped)
     {
@@ -472,7 +471,7 @@ void startTX()
     m_DStarData.reset();
     m_bitSlicer.reset();
     m_DStarData.setMSG(config.dStarMsg);
-    ambeDataBitPos = DStarDV::SLOW_AMBE_BITSIZE;//to run into data fetch immediately
+    frameDataBitPos = DStarDV::SLOW_AMBE_BITSIZE;//to run into data fetch immediately
     radio.clearDio0Action();
     radio.setDio1Action(txBit);
     m_isRxOrTxActive = true;
@@ -1110,9 +1109,9 @@ void resetTXData()
 {
     preambleBitPos = 0;
     headerBitPos = 0;
-    ambeDataBitPos = 0;
+    frameDataBitPos = 0;
     stoppingFramePos = 0;
-    isFirstAmbe = true;
+    isFirstFrame = true;
 }
 
 uint8_t readBTByte{0};
@@ -1145,25 +1144,24 @@ void loop()
         {
             bluetoothXOFF = false;
             serialBT.write(0x11);//XON
-            //            Serial << "TX buffer is ready:" << sa.comBuffer.size() << endl;
+            Serial << "TX buffer is ready" << endl;
         }
         while(serialBT.available() > 0)
         {
             auto ch = serialBT.read();
-            ///Serial << "0x" << _HEX(ch) << ", ";
+            Serial << "0x" << _HEX(ch) << ", ";
             plainDataBTRXBuff[readBTByte] = ch;
             readBTByte++;
             if(readBTByte == sizeof(plainDataBTRXBuff))
             {
-                //                Serial << "Adding: 5 " << endl;
-                m_DStarData.setDPRS(plainDataBTRXBuff, sizeof(plainDataBTRXBuff));
+                m_DStarData.setDPRS(plainDataBTRXBuff, sizeof(plainDataBTRXBuff), config.isFastDataEnabled);
                 readBTByte = 0;
                 break;
             }
         }
-        if(readBTByte != 0)
+        if(readBTByte != 0)//send rest from the buffer
         {
-            //            Serial << "Adding: " << uint(readBTByte) << endl;
+            Serial << "Adding: " << uint(readBTByte) << endl;
             m_DStarData.setDPRS(plainDataBTRXBuff, readBTByte);
             readBTByte = 0;
         }
@@ -1172,7 +1170,7 @@ void loop()
     {
         if(!bluetoothXOFF)
         {
-            //            Serial << "TX buffer is full!!:" << sa.comBuffer.size() << endl;
+            Serial << "TX buffer is full!!:" << m_DStarData.comBuffer.size() << endl;
             serialBT.write(0x13);//XOFF
             bluetoothXOFF = true;
         }
