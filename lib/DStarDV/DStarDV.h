@@ -40,16 +40,24 @@ public:
     {
         return m_haveMsg;
     }
-    inline bool isBufferFull()
+    bool hasSpaceInBuffer()
     {
-        return comBuffer.size() + 10 > comBuffer.maxSize();
-    }
-    inline bool isHalfBufferEmpty()
-    {
-        return comBuffer.size() > comBuffer.maxSize() / 2;
+        //        m_wasBufferFull
+        bool bufferAlmostEmpty = comBuffer.size() < 10;
+        if(bufferAlmostEmpty)
+        {
+            m_bufferReady = true;
+        }
+        bool bufferAmostFull = comBuffer.size() + 10 > comBuffer.maxSize();
+        if(bufferAmostFull)
+        {
+            m_bufferReady = false;
+        }
+        return m_bufferReady;
     }
     RingBuf<FrameData, 50> comBuffer;
 private:
+    bool m_bufferReady{false};
     Stream* m_outputStream{nullptr};
     uint8_t dStarMsg[DSTAR_MSG_SIZE + 1];
     uint posMSG{0};
@@ -65,4 +73,6 @@ private:
     uint8_t m_fastDataPacket[2][DSTAR_FRAME_SIZE];
     uint8_t m_fastDataBuffer[DSTAR_MAX_FASTDATA_SIZE];
     uint8_t m_syncFrameData[DSTAR_FRAME_SIZE];
+    void splitDataSlow(uint8_t* msg, uint size);
+    void splitDataFast(uint8_t* msg, uint size);
 };

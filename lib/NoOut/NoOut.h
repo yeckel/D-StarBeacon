@@ -6,6 +6,13 @@
 #else
 #define SERLOG m_noOut
 #endif
+
+#if 0
+#define LOGTX  Serial
+#else
+#define LOGTX m_noOut
+#endif
+
 class NoOut: public Stream
 {
     // Print interface
