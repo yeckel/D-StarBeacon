@@ -54,6 +54,9 @@ Probably best D-Star info sources:
 ### Web interface
 You shall connect to the provided IP address with an browser and set your callsign and so on. The items shall be self-explanatory. Setting is stored locally into the file config.txt
 
+### Sending and receiving images and text messages
+[Video on YouTube](https://www.youtube.com/watch?v=e5j2WmVVSnE)
+
 # Installation
 I'm using [Platformio](https://platformio.org/) for development. Have a look on their great documentation. Simple command ```pio run -t upload``` and ```pio run -t uploadfs``` shall work. Before uploading please configure your callsign in the __src/data/config.txt__ and your WiFi network(s) in __src/data/networks.txt__ The format is:
 ```
