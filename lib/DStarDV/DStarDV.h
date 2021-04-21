@@ -8,6 +8,7 @@ using uint = unsigned int;
 class DStarDV
 {
 public:
+    static constexpr uint8_t DSTAR_VOICE_SIZE{9u};//packet size 9 voice plus 3 data
     static constexpr uint8_t DSTAR_FRAME_SIZE{12u};//packet size 9 voice plus 3 data
     static constexpr uint8_t SLOW_AMBE_BITSIZE{DSTAR_FRAME_SIZE * 8};
     static constexpr uint8_t DSTAR_MSG_SIZE{20};//Icom message on the display rotating
