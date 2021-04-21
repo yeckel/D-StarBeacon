@@ -2,28 +2,30 @@
 
 Simple D-Star transceiver for TTGO T-Beam ESP32 SX1278 written with Platformio. 
 
-## Technical details
-* It uses sx127x FSK Continuous Mode, PreambleDetect and SyncAddress on DIO0, Dclk(DIO1) and Data(DIO2)
-* D-Star ending frame is caught by local configurable shift register
-* D-Star sync frames are used to break RX when sync lost
-* Decodes D-Star RF Header, 20 characters message and and sends DV Slow data payload to the Bluetooth Connection where it could be decoded with RS-MS1A
- * Text messages are working fine
- * Images are loosing synchronization after some time, smaller ones are working fine. ??Freq drift??
-*  Using SX127x AFC which is not yet in the official RadioLib, for the time beeing use my [clone](https://github.com/yeckel/RadioLib) PR in progress.
+## Technical details and features
+* It uses sx127x FSK Continuous direct Mode, PreambleDetect and SyncAddress on DIO0, Dclk(DIO1) and Data(DIO2)
+* RX stop happens after D-Star ending frame or failed receiving frame sync packet.
+* Decodes D-Star RF Header, 20 characters message and and sends DV Slow data payload to the Bluetooth Connection where it could be decoded with RS-MS1A or D-Rats or some other app.
+* Could send DPRS possition report with coordinates from local GPS with configured timeout.
+* Web interface is used to configure the transceiver.
+* It looks for preconfigured WiFi ssid and password and eventually starts it's own hotspot.
 
-Currently the D-Star header, D-Star message and D-GPS is properly encoded and sent every 20s.
+## Licences
+My code is available under BSD2. In some parts I was heavily inspired (an euphemism for Ctrl+C&Ctrl+V) by code of others open source projects. Sometimes whole libraries are used which are using other licences (GPL).
 
-For header viterbi&co code from Anthonys F4GOH [DSTAR](https://github.com/f4goh/DSTAR) great work is used with some modification. The configuration and WiFi code was heavily inspired by DL9RDZ [RDZ_TTGO_SONDE](https://github.com/dl9rdz/rdz_ttgo_sonde) Radio handling is done with user friendly [RadioLib](https://github.com/jgromes/RadioLib)
+For header viterbi&co code from Anthonys F4GOH [DSTAR](https://github.com/f4goh/DSTAR) great work is used with some modification. Anthony also gave me some of his private code for inspiration. Tnx!  The configuration and WiFi code was heavily inspired by DL9RDZ [RDZ_TTGO_SONDE](https://github.com/dl9rdz/rdz_ttgo_sonde) Radio handling is done with user friendly [RadioLib](https://github.com/jgromes/RadioLib)
 
+If you feel your copyrights might be offended, please don't heasitate contacting me. It's shall be fun.
+
+## Sources wisdom
 Probably best D-Star info sources:
 [kb9mwr](https://www.qsl.net/kb9mwr/projects/dv/dstar/)
 [Slow data](https://www.qsl.net/kb9mwr/projects/dv/dstar/Slow%20Data.pdf)
-
-Have a look in [D-StarReceive](https://github.com/yeckel/D-StarReceive) for complementary receiver.
+[MMDVMHost](https://github.com/g4klx/MMDVMHost)
 
 ### Warning
 XTAL on board the SX1278 transceiver module has a random frequency offset which driffts with temperature! The offset could be measured by sending CW and tuning an SDR receiver into that frequency. (Note that CW mode at most radios has an tone offset like 600Hz) From my experience with SX1278 modules and IC-705 TRX
-works GMSK at 4800bits/s fine at +/- 600Hz offset from the carrier frequency. With AFC (automatic frequency correction) enabled set to this works fine to +/- 12kHz!
+works GMSK at 4800bits/s fine at +/- 600Hz offset from the carrier frequency. With AFC (automatic frequency correction) enabled set to this works fine to +/- 12kHz! Don't forget setting our frequency offset in web gui.
 
 **I have currenty 4 modules and they are up to 4kHz off frequency!**
 
@@ -47,7 +49,7 @@ works GMSK at 4800bits/s fine at +/- 600Hz offset from the carrier frequency. Wi
    * <del> RX
    * TX
      * <del> Configuration  enable fast data, enable fast GPS
-     * encode and send
+     * <del> encode and send
 * <del>Implement setting RF offset with suggestion from the last AGC run
 * <del>Show when the beacon is running with time to next TX
 * <del>Show GPS coordinates in web and maybe display
