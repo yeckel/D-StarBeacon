@@ -1021,6 +1021,21 @@ long getGPSTime()
     return t_of_day;
 }
 //--------------------------------------------------setup()-------------------------------------------
+
+void gpsTask(void* /*parameters*/)
+{
+    while(true)
+    {
+        while(gpsSerial.available() > 0)
+        {
+            auto ch = gpsSerial.read();
+            gps.encode(ch);
+            //        Serial.write(ch);
+        }
+        taskYIELD();
+    }
+}
+
 void setup()
 {
     pinMode(BUILTIN_LED, OUTPUT);
@@ -1076,6 +1091,14 @@ void setup()
     checkLoraState(radio.setDataShaping(RADIOLIB_SHAPING_0_5));
     checkLoraState(radio.setSyncWord(syncWord, sizeof(syncWord)));
 
+    xTaskCreatePinnedToCore(gpsTask,
+                            "GPS",
+                            2048,
+                            NULL,
+                            1,
+                            NULL,
+                            1);
+
     startRX();
 }
 
@@ -1128,12 +1151,6 @@ void loop()
         {
             repaintDisplay();
         }
-    }
-    while(gpsSerial.available() > 0)
-    {
-        auto ch = gpsSerial.read();
-        gps.encode(ch);
-        //        Serial.write(ch);
     }
 
     if(m_DStarData.hasSpaceInBuffer())
