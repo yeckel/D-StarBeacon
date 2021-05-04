@@ -1,7 +1,7 @@
 #pragma once
 #include <Stream.h>
 #include <stdint.h>
-#include <RingBuf.h>
+#include <FreeRTOS.h>
 
 using uint = unsigned int;
 
@@ -15,6 +15,7 @@ public:
     static constexpr uint8_t DSTAR_MAX_FASTDATA_SIZE{28};
     static constexpr uint8_t BYTES_PER_PACKET_SLOW{5};//2+3
     static constexpr uint8_t BYTES_PER_PACKET_FAST{20};//10+10
+    DStarDV(QueueHandle_t& txQueue): comBuffer(txQueue) {}
     struct FrameData
     {
         uint8_t data[DSTAR_FRAME_SIZE];
@@ -41,22 +42,22 @@ public:
     {
         return m_haveMsg;
     }
-    bool hasSpaceInBuffer()
+    bool hasSpaceInBuffer(int queueSize)
     {
         //        m_wasBufferFull
-        bool bufferAlmostEmpty = comBuffer.size() < 10;
+        bool bufferAlmostEmpty = uxQueueMessagesWaiting(comBuffer) < 10;
         if(bufferAlmostEmpty)
         {
             m_bufferReady = true;
         }
-        bool bufferAmostFull = comBuffer.size() + 10 > comBuffer.maxSize();
+        bool bufferAmostFull = uxQueueMessagesWaiting(comBuffer) + 10 > newParameter;
         if(bufferAmostFull)
         {
             m_bufferReady = false;
         }
         return m_bufferReady;
     }
-    RingBuf<FrameData, 50> comBuffer;
+    QueueHandle_t& comBuffer;
 private:
     bool m_bufferReady{false};
     Stream* m_outputStream{nullptr};
