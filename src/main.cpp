@@ -46,6 +46,9 @@ static constexpr uint16_t RX_SCREEN_TIMEOUT_SECONDS{10};
 uint16_t m_RXDataShownSeconds{0};
 bool m_isRxOrTxActive{false};
 
+static constexpr uint QUEUE_SIZE{40};
+QueueHandle_t txQueue;
+
 void checkLoraState(int state)
 {
     if(state != ERR_NONE)
@@ -110,7 +113,7 @@ uint8_t history[DSTAR::RF_HEADER_SIZE * 8];  //buffer for viterbi decoding (larg
 
 uint8_t payloadData[DStarDV::DSTAR_FRAME_SIZE];
 
-DStarDV m_DStarData;
+DStarDV m_DStarData{txQueue};
 DSTAR m_dStarHeaderCoder;
 BitSlicer m_bitSlicer;
 
@@ -337,18 +340,13 @@ void sendHeaderBit()
     headerBitPos++;
 }
 
-void fetchNextPayloadData()
-{
-    memcpy(payloadData, m_DStarData.getNextData().data, DStarDV::DSTAR_FRAME_SIZE);
-}
-
 void sendPayloadBit()
 {
     if(frameDataBitPos == DStarDV::SLOW_AMBE_BITSIZE ||
        isFirstFrame)
     {
         isFirstFrame = false;
-        fetchNextPayloadData();
+        memcpy(payloadData, m_DStarData.getNextData().data, DStarDV::DSTAR_FRAME_SIZE);
         frameDataBitPos = 0;
     }
     sendBit(payloadData, frameDataBitPos);
@@ -371,7 +369,7 @@ void txBit()
     {
         sendHeaderBit();
     }
-    else if(!m_DStarData.comBuffer.isEmpty() ||
+    else if(!xQueueIsQueueEmptyFromISR(txQueue) ||
             frameDataBitPos < DStarDV::SLOW_AMBE_BITSIZE)
     {
         sendPayloadBit();
@@ -1035,6 +1033,53 @@ void gpsTask(void* /*parameters*/)
         taskYIELD();
     }
 }
+void bluetoothTask(void* /*parameters*/)
+{
+    uint8_t readBTByte{0};
+    while(true)
+    {
+        if(m_DStarData.hasSpaceInBuffer(QUEUE_SIZE))
+        {
+            //if buffer has some space, request more data
+            if(isPTTPressed &&
+               bluetoothXOFF)
+            {
+                bluetoothXOFF = false;
+                serialBT.write(0x11);//XON
+                //            Serial << "TX buffer is ready:" << m_DStarData.comBuffer.size() << endl;;
+            }
+            while(serialBT.available() > 0)
+            {
+                auto ch = serialBT.read();
+                plainDataBTRXBuff[readBTByte] = ch;
+                readBTByte++;
+                if(readBTByte == DStarDV::BYTES_PER_PACKET_FAST)
+                {
+                    //                Serial << "Adding full: " << uint(DStarDV::BYTES_PER_PACKET_FAST) << endl;
+                    m_DStarData.setDPRS(plainDataBTRXBuff, sizeof(plainDataBTRXBuff), config.isFastDataEnabled);
+                    readBTByte = 0;
+                    break;
+                }
+            }
+            if(readBTByte != 0)//send the rest from the buffer
+            {
+                //            Serial << "Adding rest: " << uint(readBTByte) << endl;
+                m_DStarData.setDPRS(plainDataBTRXBuff, readBTByte, config.isFastDataEnabled);
+                readBTByte = 0;
+            }
+        }
+        else
+        {
+            if(!bluetoothXOFF)
+            {
+                //            Serial << "TX buffer is full:" << m_DStarData.comBuffer.size() << endl;
+                serialBT.write(0x13);//XOFF
+                bluetoothXOFF = true;
+            }
+        }
+        taskYIELD();
+    }
+}
 
 void setup()
 {
@@ -1091,14 +1136,9 @@ void setup()
     checkLoraState(radio.setDataShaping(RADIOLIB_SHAPING_0_5));
     checkLoraState(radio.setSyncWord(syncWord, sizeof(syncWord)));
 
-    xTaskCreatePinnedToCore(gpsTask,
-                            "GPS",
-                            2048,
-                            NULL,
-                            1,
-                            NULL,
-                            1);
-
+    txQueue = xQueueCreate(QUEUE_SIZE, DStarDV::DSTAR_FRAME_SIZE);
+    xTaskCreatePinnedToCore(gpsTask, "GPS", 2048, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(bluetoothTask, "BTTask", 10000, NULL, 1, NULL, 1);
     startRX();
 }
 
@@ -1138,7 +1178,6 @@ void resetTXData()
     isFirstFrame = true;
 }
 
-uint8_t readBTByte{0};
 auto m_lastTime = millis();
 void loop()
 {
@@ -1150,46 +1189,6 @@ void loop()
         if(!m_isRxOrTxActive)
         {
             repaintDisplay();
-        }
-    }
-
-    if(m_DStarData.hasSpaceInBuffer())
-    {
-        //if buffer has some space, request more data
-        if(isPTTPressed &&
-           bluetoothXOFF)
-        {
-            bluetoothXOFF = false;
-            serialBT.write(0x11);//XON
-            //            Serial << "TX buffer is ready:" << m_DStarData.comBuffer.size() << endl;;
-        }
-        while(serialBT.available() > 0)
-        {
-            auto ch = serialBT.read();
-            plainDataBTRXBuff[readBTByte] = ch;
-            readBTByte++;
-            if(readBTByte == DStarDV::BYTES_PER_PACKET_FAST)
-            {
-                //                Serial << "Adding full: " << uint(DStarDV::BYTES_PER_PACKET_FAST) << endl;
-                m_DStarData.setDPRS(plainDataBTRXBuff, sizeof(plainDataBTRXBuff), config.isFastDataEnabled);
-                readBTByte = 0;
-                break;
-            }
-        }
-        if(readBTByte != 0)//send the rest from the buffer
-        {
-            //            Serial << "Adding rest: " << uint(readBTByte) << endl;
-            m_DStarData.setDPRS(plainDataBTRXBuff, readBTByte, config.isFastDataEnabled);
-            readBTByte = 0;
-        }
-    }
-    else
-    {
-        if(!bluetoothXOFF)
-        {
-            //            Serial << "TX buffer is full:" << m_DStarData.comBuffer.size() << endl;
-            serialBT.write(0x13);//XOFF
-            bluetoothXOFF = true;
         }
     }
 
@@ -1217,7 +1216,7 @@ void loop()
             m_timeToBeacon = config.beaconInterval - newSecond + lastBEaconTime;
         }
     }
-    if(!m_DStarData.comBuffer.isEmpty() && !isPTTPressed)
+    if(uxQueueMessagesWaiting(txQueue) && !isPTTPressed)
     {
         startTX();
     }

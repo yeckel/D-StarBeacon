@@ -99,7 +99,7 @@ void DStarDV::pushScrambled(FrameData data, bool whole)
     {
         scrambleReverseOutput(data.data + 9, 3);
     }
-    comBuffer.push(data);
+    xQueueSend(comBuffer, (void*) &data, 0);
 }
 
 void DStarDV::setDataOutput(Stream* outputStream)
@@ -368,7 +368,7 @@ DStarDV::FrameData DStarDV::getNextData()
     }
     else
     {
-        comBuffer.lockedPop(data);
+        xQueueReceive(comBuffer, (void*) &data, 0);
     }
     dataCounter++;
     return data;
