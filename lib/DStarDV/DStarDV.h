@@ -50,7 +50,7 @@ public:
         {
             m_bufferReady = true;
         }
-        bool bufferAmostFull = uxQueueMessagesWaiting(comBuffer) + 10 > newParameter;
+        bool bufferAmostFull = uxQueueMessagesWaiting(comBuffer) + 10 > queueSize;
         if(bufferAmostFull)
         {
             m_bufferReady = false;
