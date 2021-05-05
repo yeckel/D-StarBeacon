@@ -44,7 +44,7 @@ bool BitSlicer::processDataFrame()
     return false;
 }
 
-bool BitSlicer::appendBit(bool bit)
+bool IRAM_ATTR BitSlicer::appendBit(bool bit)
 {
     auto atEnd = tailMatcher.appendAndCheck(bit);
     if(atEnd)

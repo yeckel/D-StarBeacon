@@ -340,7 +340,7 @@ void sendHeaderBit()
     headerBitPos++;
 }
 
-void sendPayloadBit()
+void IRAM_ATTR sendPayloadBit()
 {
     if(frameDataBitPos == DStarDV::SLOW_AMBE_BITSIZE ||
        isFirstFrame)
@@ -359,7 +359,7 @@ void sendStoppingFrameBit()
     stoppingFramePos++;
 }
 //--------------------------------Interrupt handler-------------------------------------
-void txBit()
+void IRAM_ATTR txBit()
 {
     if(preambleBitPos < PREAMBLE_BITSIZE)
     {
@@ -386,7 +386,7 @@ void txBit()
     }
 }
 
-void rxBit()
+void IRAM_ATTR rxBit()
 {
     auto receivedBit = digitalRead(LORA_IO2);
     //    Serial << receivedBit;
@@ -399,7 +399,7 @@ void rxBit()
     }
 }
 
-void receivedSyncWord(void)
+void IRAM_ATTR receivedSyncWord(void)
 {
     radio.setDio1Action(rxBit);
     m_isRxOrTxActive = true;
@@ -1084,7 +1084,7 @@ void bluetoothTask(void* /*parameters*/)
 void setup()
 {
     pinMode(BUILTIN_LED, OUTPUT);
-    Serial.begin(1000000);
+    Serial.begin(115200);
     gpsSerial.begin(9600, SERIAL_8N1, GPS_TX, GPS_RX);
     serialBT.begin("D-Star Beacon");
     m_DStarData.setDataOutput(&serialBT);

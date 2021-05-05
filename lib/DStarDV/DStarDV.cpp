@@ -357,7 +357,7 @@ void DStarDV::setDPRS(uint8_t* msg, uint size, bool useFastDV)
     }
 }
 
-DStarDV::FrameData DStarDV::getNextData()
+DStarDV::FrameData IRAM_ATTR DStarDV::getNextData()
 {
     //first and every 21st packet is sync one
     FrameData data;
@@ -368,7 +368,7 @@ DStarDV::FrameData DStarDV::getNextData()
     }
     else
     {
-        xQueueReceive(comBuffer, (void*) &data, 0);
+        xQueueReceiveFromISR(comBuffer, (void*) &data, 0);
     }
     dataCounter++;
     return data;
