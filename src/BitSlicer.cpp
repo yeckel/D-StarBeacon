@@ -5,18 +5,14 @@
 namespace
 {
     static constexpr uint8_t endSyncData[] = {0xaa, 0xaa, 0xaa, 0xaa, 0x13, 0x5e};
-    static constexpr uint8_t syncFrame[] = {0xaa, 0xb4, 0x68}; //101010101011010001101000 every 1st and 21th !!DATA!! frame
 }
 
 bool BitSlicer::processDataFrame()
 {
     if(m_dataFrameCounter == 0)
     {
-        bool isSyncVrame = m_dataBuff[11] == syncFrame[2] &&
-                           m_dataBuff[10] == syncFrame[1] &&
-                           m_dataBuff[9] == syncFrame[0];
         receivedAmbeByteNr = 0;
-        if(!isSyncVrame)
+        if(!SyncFrame::isSyncFrame(m_dataBuff))
         {
             Serial << "Failed sync!";
             for(uint i = 0; i < DSTAR_FRAME_SIZE; i++)
@@ -26,19 +22,13 @@ bool BitSlicer::processDataFrame()
             Serial << endl;
             return true;
         }
-        memcpy(m_dataBuffSync, m_dataBuff, DSTAR_FRAME_SIZE);
-        m_syncReady = true;
         //        Serial << "  SYNC" << endl;
     }
     else
     {
-        m_evenReady |= !m_isOdd;
-        m_oddReady |= m_isOdd;
-        //start storing to the 2nd buffer
-        m_isOdd = !m_isOdd;
-        m_dataBuff = m_isOdd ? m_dataBuffOdd : m_dataBuffEven;
         receivedAmbeByteNr = 0;
     }
+    xQueueSendFromISR(rxQueue, m_dataBuff, 0);
     //    Serial << " nr:" << _DEC(m_dataFrameCounter) << " ";
     m_dataFrameCounter = m_dataFrameCounter == 20 ? 0 : m_dataFrameCounter + 1;
     return false;
@@ -92,8 +82,8 @@ bool IRAM_ATTR BitSlicer::appendBit(bool bit)
     return false;
 }
 
-BitSlicer::BitSlicer()
-    : tailMatcher(endSyncData, sizeof(endSyncData))
+BitSlicer::BitSlicer(QueueHandle_t& rxQueue)
+    : tailMatcher(endSyncData, sizeof(endSyncData)), rxQueue(rxQueue)
 {
 }
 
@@ -105,11 +95,6 @@ void BitSlicer::reset()
     headerReceivedBits = 0;
     receivedRFHeader = false;
     receivedByte = 0;
-    m_isOdd = false;
-    m_evenReady = false;
-    m_oddReady = false;
-    m_syncReady = false;
-    m_dataBuff = m_dataBuffEven;
     receivedAmbeByteNr = 0;
     m_dataFrameCounter = 0;
     tailMatcher.reset();
@@ -124,37 +109,4 @@ void BitSlicer::setHeaderBuffer(uint8_t* headerBuff, uint headerBuffSize)
 bool BitSlicer::haveHeader()
 {
     return headerReceivedBits >= HEADER_BITSIZE;
-}
-
-bool BitSlicer::isEvenDataReady()
-{
-    return  m_evenReady;
-}
-
-bool BitSlicer::isOddDataReady()
-{
-    return m_oddReady;
-}
-
-bool BitSlicer::isSyncDataReady()
-{
-    return m_syncReady;
-}
-
-uint8_t* BitSlicer::getEvenData()
-{
-    m_evenReady = false;
-    return m_dataBuffEven;
-}
-
-uint8_t* BitSlicer::getOddData()
-{
-    m_oddReady = false;
-    return m_dataBuffOdd;
-}
-
-uint8_t* BitSlicer::getSyncData()
-{
-    m_syncReady = false;
-    return m_dataBuffSync;
 }

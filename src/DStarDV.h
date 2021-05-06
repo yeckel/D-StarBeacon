@@ -29,10 +29,9 @@ public:
     void setDataOutput(Stream* outputStream);
     /**
     * @brief receiveData
-    * @param buff - three bytes of DV slow data
+    * @param buff - three bytes of DV data
     */
     void receiveData(uint8_t* buff);
-    void receiveSyncData(uint8_t* buff);
     void reset();
     const uint8_t* getDStarMsg();
     void setMSG(const String& msg);
@@ -77,4 +76,6 @@ private:
     uint8_t m_syncFrameData[DSTAR_FRAME_SIZE];
     void splitDataSlow(uint8_t* msg, uint size);
     void splitDataFast(uint8_t* msg, uint size);
+    void processDVData(uint8_t* buff);
+    void processSyncData(uint8_t* buff);
 };

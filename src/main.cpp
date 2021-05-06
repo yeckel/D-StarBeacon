@@ -48,7 +48,7 @@ uint16_t m_RXDataShownSeconds{0};
 bool m_isRxOrTxActive{false};
 
 static constexpr uint QUEUE_SIZE{40};
-QueueHandle_t txQueue;
+QueueHandle_t txQueue, rxQueue;
 DStarDecoder dStarDecoder;
 
 void checkLoraState(int state)
@@ -117,7 +117,7 @@ uint8_t payloadData[DStarDV::DSTAR_FRAME_SIZE];
 
 DStarDV m_DStarData{txQueue};
 DSTAR m_dStarHeaderCoder;
-BitSlicer m_bitSlicer;
+BitSlicer m_bitSlicer{rxQueue};
 
 volatile uint frameDataBitPos{0};
 bool isFirstFrame{true};
@@ -1083,6 +1083,19 @@ void bluetoothTask(void* /*parameters*/)
     }
 }
 
+void ambeDecoderTask(void* /*parameters*/)
+{
+    uint8_t buff[DStarDV::DSTAR_FRAME_SIZE];
+    while(1)
+    {
+        if(xQueueReceive(rxQueue, buff, 0) == pdPASS)
+        {
+            m_DStarData.receiveData(buff);
+        }
+        taskYIELD();
+    }
+}
+
 void setup()
 {
     pinMode(BUILTIN_LED, OUTPUT);
@@ -1139,8 +1152,10 @@ void setup()
     checkLoraState(radio.setSyncWord(syncWord, sizeof(syncWord)));
 
     txQueue = xQueueCreate(QUEUE_SIZE, DStarDV::DSTAR_FRAME_SIZE);
-    xTaskCreatePinnedToCore(gpsTask, "GPS", 2048, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(bluetoothTask, "BTTask", 10000, NULL, 1, NULL, 1);
+    rxQueue = xQueueCreate(QUEUE_SIZE, DStarDV::DSTAR_FRAME_SIZE);
+    xTaskCreatePinnedToCore(gpsTask, "gpsTask", 2048, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(bluetoothTask, "bluetoothTask", 10000, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(ambeDecoderTask, "ambeDecoderTask", 10000, NULL, 1, NULL, 1);
     startRX();
 }
 
@@ -1247,17 +1262,5 @@ void loop()
             memcpy(m_dStarMsg, m_DStarData.getDStarMsg(), DStarDV::DSTAR_MSG_SIZE);
         }
         startRX();
-    }
-    if(m_bitSlicer.isEvenDataReady())
-    {
-        m_DStarData.receiveData(m_bitSlicer.getEvenData());
-    }
-    if(m_bitSlicer.isOddDataReady())
-    {
-        m_DStarData.receiveData(m_bitSlicer.getOddData());
-    }
-    if(m_bitSlicer.isSyncDataReady())
-    {
-        m_DStarData.receiveSyncData(m_bitSlicer.getSyncData());
     }
 }

@@ -2,6 +2,7 @@
 #include <string.h>
 #include "Scrambler.h"
 #include <NoOut.h>
+#include <SyncFrame.h>
 
 namespace
 {
@@ -107,14 +108,8 @@ void DStarDV::setDataOutput(Stream* outputStream)
     m_outputStream = outputStream;
 }
 
-void DStarDV::receiveData(uint8_t* buff)
+void DStarDV::processDVData(uint8_t* buff)
 {
-    for(uint i = 0; i < DSTAR_VOICE_SIZE; i++)
-    {
-        LOGVOICE << "0x" << _HEX(buff[i]) << ", ";
-    }
-    LOGVOICE << endl;
-
     scrambleReverseInput(buff, DSTAR_FRAME_SIZE);
     LOGRX << "Data " << (m_isEven ? "e" : "o") << ":";
     for(uint i = 0; i < DSTAR_FRAME_SIZE; i++)
@@ -194,13 +189,25 @@ void DStarDV::receiveData(uint8_t* buff)
     m_isEven = !m_isEven;
 }
 
-void DStarDV::receiveSyncData(uint8_t* buff)
+void DStarDV::receiveData(uint8_t* buff)
 {
     for(uint i = 0; i < DSTAR_VOICE_SIZE; i++)
     {
         LOGVOICE << "0x" << _HEX(buff[i]) << ", ";
     }
     LOGVOICE << endl;
+    if(SyncFrame::isSyncFrame(buff))
+    {
+        processSyncData(buff);
+    }
+    else
+    {
+        processDVData(buff);
+    }
+}
+
+void DStarDV::processSyncData(uint8_t* buff)
+{
     LOGRX << "Sync:";
     memcpy(m_syncFrameData, buff, DSTAR_FRAME_SIZE);
     scrambleReverseInput(m_syncFrameData, DSTAR_FRAME_SIZE - 3);

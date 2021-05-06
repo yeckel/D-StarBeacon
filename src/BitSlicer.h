@@ -1,6 +1,8 @@
 #pragma once
 #include <stdint.h>
 #include "BitMatcher.h"
+#include <FreeRTOS.h>
+#include "SyncFrame.h"
 
 using uint = unsigned int;
 
@@ -13,35 +15,22 @@ public:
     static constexpr uint HEADER_SIZE{(HEADER_BITSIZE + 4) / 8 + 1}; //header 660 + 4 padding to full byte plus viterbi
     static constexpr uint8_t DSTAR_FRAME_SIZE{12u};
 
-    BitSlicer();
+    BitSlicer(QueueHandle_t& rxQueue);
     void reset();
     void setHeaderBuffer(uint8_t* headerBuff, uint headerBuffSize);
     bool appendBit(bool bit);
     bool haveHeader();
-    bool isEvenDataReady();
-    bool isOddDataReady();
-    bool isSyncDataReady();
-    uint8_t* getEvenData();
-    uint8_t* getOddData();
-    uint8_t* getSyncData();
+
 private:
     BitMatcher tailMatcher;
+    QueueHandle_t& rxQueue;
     bool receivedRFHeader{false};
     uint8_t receivedByte{0};
 
     uint8_t* m_headerBuff{nullptr};
     uint m_headerBuffSize{0};
-    uint8_t m_dataBuffEven[DSTAR_FRAME_SIZE];
-    uint8_t m_dataBuffOdd[DSTAR_FRAME_SIZE];
-    uint8_t m_dataBuffSync[DSTAR_FRAME_SIZE];
-    uint8_t* m_dataBuff = m_dataBuffEven;
+    uint8_t m_dataBuff[DSTAR_FRAME_SIZE];
     uint8_t m_dataFrameCounter{0};
-
-    bool m_isOdd{false};
-    bool m_evenReady{false};
-    bool m_oddReady{false};
-    bool m_syncReady{false};
-
     uint8_t receivedHeaderByteNr{0};
     uint8_t receivedAmbeByteNr{0};
     uint8_t bitInRxByte{7};
