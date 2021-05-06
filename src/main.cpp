@@ -16,6 +16,7 @@
 #include <SPIFFS.h>
 #include <Wire.h>
 #include <NoOut.h>
+#include "DStarDecoder.h"
 
 #ifndef LORA_IO1
 #define LORA_IO1 LORA_D1 //With board = ttgo-lora32-v21 is the port id different!
@@ -48,6 +49,7 @@ bool m_isRxOrTxActive{false};
 
 static constexpr uint QUEUE_SIZE{40};
 QueueHandle_t txQueue;
+DStarDecoder dStarDecoder;
 
 void checkLoraState(int state)
 {
