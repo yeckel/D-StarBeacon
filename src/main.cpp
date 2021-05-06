@@ -322,7 +322,7 @@ void repaintDisplay()
     display.display();
 }
 //----------------------------------TX bit routines -----------------------
-void sendBit(uint8_t* sendBuff, uint buffBitPos)
+void IRAM_ATTR sendBit(uint8_t* sendBuff, uint buffBitPos)
 {
     auto bytePos = buffBitPos / 8;
     auto bitPos = buffBitPos % 8;
@@ -330,13 +330,13 @@ void sendBit(uint8_t* sendBuff, uint buffBitPos)
     digitalWrite(LORA_IO2, bit);
 }
 
-void sendPreambleBit()
+void IRAM_ATTR sendPreambleBit()
 {
     sendBit(preambleAndBitSync, preambleBitPos);
     preambleBitPos++;
 }
 
-void sendHeaderBit()
+void IRAM_ATTR sendHeaderBit()
 {
     sendBit(headerRXTXBuffer, headerBitPos);
     headerBitPos++;
@@ -355,7 +355,7 @@ void IRAM_ATTR sendPayloadBit()
     frameDataBitPos++;
 }
 
-void sendStoppingFrameBit()
+void IRAM_ATTR sendStoppingFrameBit()
 {
     sendBit(stoppingFrame, stoppingFramePos);
     stoppingFramePos++;
