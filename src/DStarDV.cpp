@@ -100,7 +100,7 @@ void DStarDV::pushScrambled(FrameData data, bool whole)
     {
         scrambleReverseOutput(data.data + 9, 3);
     }
-    xQueueSend(comBuffer, (void*) &data, 0);
+    xQueueSend(txQueue, (void*) &data, 0);
 }
 
 void DStarDV::setDataOutput(Stream* outputStream)
@@ -191,11 +191,7 @@ void DStarDV::processDVData(uint8_t* buff)
 
 void DStarDV::receiveData(uint8_t* buff)
 {
-    for(uint i = 0; i < DSTAR_VOICE_SIZE; i++)
-    {
-        LOGVOICE << "0x" << _HEX(buff[i]) << ", ";
-    }
-    LOGVOICE << endl;
+    xQueueSend(ambeRxQueue, buff, 0);
     if(SyncFrame::isSyncFrame(buff))
     {
         processSyncData(buff);
@@ -375,7 +371,7 @@ DStarDV::FrameData IRAM_ATTR DStarDV::getNextData()
     }
     else
     {
-        xQueueReceiveFromISR(comBuffer, (void*) &data, 0);
+        xQueueReceiveFromISR(txQueue, (void*) &data, 0);
     }
     dataCounter++;
     return data;

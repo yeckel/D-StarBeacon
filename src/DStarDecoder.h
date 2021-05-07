@@ -8,6 +8,7 @@ extern "C" {
 class DStarDecoder
 {
 public:
+    static constexpr uint16_t AUDIO_SIZE{160};
     DStarDecoder();
     void process_dstar(unsigned char* d);
 
@@ -16,11 +17,12 @@ private:
     mbe_parameters* m_prev_mp;
     mbe_parameters* m_prev_mp_enhanced;
 
-    float m_audio_out_temp_buf[160];   //!< output of decoder
+    float m_audio_out_temp_buf[AUDIO_SIZE];   //!< output of decoder
     int m_errs{0};
     int m_errs2{0};
     char m_err_str[64];
     char ambe_d[49];
+    float m_volume{1.0f};
 
     const int* w, *x;
 
@@ -35,5 +37,5 @@ private:
     void mbe_initMbeParms(mbe_parms* cur_mp, mbe_parms* prev_mp, mbe_parms* prev_mp_enhanced);
     void mbe_moveMbeParms(mbe_parms* cur_mp, mbe_parms* prev_mp);
     void writeAudio(int16_t* pcm, uint16_t len);
-    uint8_t reverse(uint8_t b);
+
 };

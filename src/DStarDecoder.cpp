@@ -1,6 +1,7 @@
 #include "DStarDecoder.h"
 #include <Arduino.h>
 #include <Streaming.h>
+#include <Scrambler.h>
 
 DStarDecoder::DStarDecoder()
 {
@@ -16,13 +17,19 @@ DStarDecoder::DStarDecoder()
 void DStarDecoder::writeAudio(int16_t* pcm, uint16_t len)
 {
     //todo
+    Serial << __FUNCTION__ << " :";
+    for(uint i = 0; i < len; i++)
+    {
+        Serial << pcm[i] << ", ";
+    }
+    Serial << endl;
 }
 
 void DStarDecoder::process_dstar(unsigned char* d)
 {
     for(auto i = 0; i < 9; i++)
     {
-        *(d + i) =  reverse(*(d + i));
+        *(d + i) =  reverseBits(*(d + i));
     }
     char ambe_fr[4][24];
 
@@ -41,14 +48,13 @@ void DStarDecoder::process_dstar(unsigned char* d)
     }
 
     mbe_processAmbe3600x2400Framef(m_audio_out_temp_buf, &m_errs, &m_errs2, m_err_str, ambe_fr, ambe_d, m_cur_mp, m_prev_mp, m_prev_mp_enhanced, 1);
-    Serial << "m_errs:" << m_errs << " m_errs2:" << m_errs2 << " m_err_str:" << m_err_str << endl;
+    Serial << "m_errs:" << m_errs << " m_errs2:" << m_errs2 << " Str:" << m_err_str << endl;
 
-    auto m_audio_out_temp_buf_p = m_audio_out_temp_buf;
-    float m_volume = 1.0f;
-    short m_audio_out_buf[160];
+    float* m_audio_out_temp_buf_p = m_audio_out_temp_buf;
+    short m_audio_out_buf[AUDIO_SIZE];
     short* m_audio_out_buf_p  = m_audio_out_buf;
 
-    for(uint n = 0; n < sizeof(m_audio_out_buf); n++)
+    for(uint n = 0; n < AUDIO_SIZE; n++)
     {
         *m_audio_out_temp_buf_p *= m_volume;
         if(*m_audio_out_temp_buf_p > static_cast<float>(32760))
@@ -65,7 +71,7 @@ void DStarDecoder::process_dstar(unsigned char* d)
         m_audio_out_buf_p++;
         m_audio_out_temp_buf_p++;
     }
-    writeAudio(m_audio_out_buf, sizeof(m_audio_out_buf));
+    writeAudio(m_audio_out_buf, AUDIO_SIZE);
 }
 
 void DStarDecoder::mbe_moveMbeParms(mbe_parms* cur_mp, mbe_parms* prev_mp)
@@ -109,12 +115,4 @@ void DStarDecoder::mbe_initMbeParms(mbe_parms* cur_mp, mbe_parms* prev_mp, mbe_p
     prev_mp->repeat = 0;
     mbe_moveMbeParms(prev_mp, cur_mp);
     mbe_moveMbeParms(prev_mp, prev_mp_enhanced);
-}
-
-uint8_t DStarDecoder::reverse(uint8_t b)
-{
-    b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
-    b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
-    b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
-    return b;
 }

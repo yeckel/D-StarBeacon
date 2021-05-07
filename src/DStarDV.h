@@ -15,7 +15,8 @@ public:
     static constexpr uint8_t DSTAR_MAX_FASTDATA_SIZE{28};
     static constexpr uint8_t BYTES_PER_PACKET_SLOW{5};//2+3
     static constexpr uint8_t BYTES_PER_PACKET_FAST{20};//10+10
-    DStarDV(QueueHandle_t& txQueue): comBuffer(txQueue) {}
+    DStarDV(QueueHandle_t& txQueue, QueueHandle_t& ambeRxQueue):
+        txQueue(txQueue), ambeRxQueue(ambeRxQueue) {}
     struct FrameData
     {
         uint8_t data[DSTAR_FRAME_SIZE];
@@ -41,22 +42,22 @@ public:
     {
         return m_haveMsg;
     }
-    bool hasSpaceInBuffer(int queueSize)
+    bool hasSpaceInBuffer(uint queueSize)
     {
         //        m_wasBufferFull
-        bool bufferAlmostEmpty = uxQueueMessagesWaiting(comBuffer) < 10;
+        bool bufferAlmostEmpty = uxQueueMessagesWaiting(txQueue) < 10;
         if(bufferAlmostEmpty)
         {
             m_bufferReady = true;
         }
-        bool bufferAmostFull = uxQueueMessagesWaiting(comBuffer) + 10 > queueSize;
+        bool bufferAmostFull = uxQueueMessagesWaiting(txQueue) + 10 > queueSize;
         if(bufferAmostFull)
         {
             m_bufferReady = false;
         }
         return m_bufferReady;
     }
-    QueueHandle_t& comBuffer;
+    QueueHandle_t& txQueue, &ambeRxQueue;
 private:
     bool m_bufferReady{false};
     Stream* m_outputStream{nullptr};

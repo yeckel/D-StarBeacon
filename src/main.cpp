@@ -47,9 +47,12 @@ static constexpr uint16_t RX_SCREEN_TIMEOUT_SECONDS{10};
 uint16_t m_RXDataShownSeconds{0};
 bool m_isRxOrTxActive{false};
 
-static constexpr uint QUEUE_SIZE{40};
-QueueHandle_t txQueue, rxQueue;
-DStarDecoder dStarDecoder;
+static constexpr uint TX_QUEUE_SIZE{40};
+static constexpr uint RX_QUEUE_SIZE{10};
+static constexpr uint AMBE_RX_QUEUE_SIZE{10};
+
+QueueHandle_t txQueue, rxQueue, ambeRxQueue;
+DStarDecoder ambeVoice;
 
 void checkLoraState(int state)
 {
@@ -115,7 +118,7 @@ uint8_t history[DSTAR::RF_HEADER_SIZE * 8];  //buffer for viterbi decoding (larg
 
 uint8_t payloadData[DStarDV::DSTAR_FRAME_SIZE];
 
-DStarDV m_DStarData{txQueue};
+DStarDV m_DStarData{txQueue, ambeRxQueue};
 DSTAR m_dStarHeaderCoder;
 BitSlicer m_bitSlicer{rxQueue};
 
@@ -1040,7 +1043,7 @@ void bluetoothTask(void* /*parameters*/)
     uint8_t readBTByte{0};
     while(true)
     {
-        if(m_DStarData.hasSpaceInBuffer(QUEUE_SIZE))
+        if(m_DStarData.hasSpaceInBuffer(TX_QUEUE_SIZE))
         {
             //if buffer has some space, request more data
             if(isPTTPressed &&
@@ -1083,7 +1086,25 @@ void bluetoothTask(void* /*parameters*/)
     }
 }
 
-void ambeDecoderTask(void* /*parameters*/)
+void ambeVoiceDecoderTask(void* /*parameters*/)
+{
+    uint8_t buff[DStarDV::DSTAR_VOICE_SIZE];
+    while(1)
+    {
+        if(xQueueReceive(ambeRxQueue, buff, 0) == pdPASS)
+        {
+            //            for(uint i = 0; i < DStarDV::DSTAR_VOICE_SIZE; i++)
+            //            {
+            //                LOGVOICE << "0x" << _HEX(buff[i]) << ", ";
+            //            }
+            //            LOGVOICE << endl;
+            ambeVoice.process_dstar(buff);
+        }
+        taskYIELD();
+    }
+}
+
+void dvDataDecoderTask(void* /*parameters*/)
 {
     uint8_t buff[DStarDV::DSTAR_FRAME_SIZE];
     while(1)
@@ -1151,11 +1172,20 @@ void setup()
     checkLoraState(radio.setDataShaping(RADIOLIB_SHAPING_0_5));
     checkLoraState(radio.setSyncWord(syncWord, sizeof(syncWord)));
 
-    txQueue = xQueueCreate(QUEUE_SIZE, DStarDV::DSTAR_FRAME_SIZE);
-    rxQueue = xQueueCreate(QUEUE_SIZE, DStarDV::DSTAR_FRAME_SIZE);
+    txQueue = xQueueCreate(TX_QUEUE_SIZE, DStarDV::DSTAR_FRAME_SIZE);
+    rxQueue = xQueueCreate(RX_QUEUE_SIZE, DStarDV::DSTAR_FRAME_SIZE);
+    ambeRxQueue = xQueueCreate(AMBE_RX_QUEUE_SIZE, DStarDV::DSTAR_VOICE_SIZE);
+
     xTaskCreatePinnedToCore(gpsTask, "gpsTask", 2048, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(bluetoothTask, "bluetoothTask", 10000, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(ambeDecoderTask, "ambeDecoderTask", 10000, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(bluetoothTask, "bluetoothTask", 2048, NULL, 1, NULL, 1);
+    if(xTaskCreatePinnedToCore(dvDataDecoderTask, "dvDataDecoderTask", 2048, NULL, 1, NULL, 1) == pdFAIL)
+    {
+        Serial << "dvDataDecoderTask start Error" << endl;
+    }
+    if(xTaskCreatePinnedToCore(ambeVoiceDecoderTask, "ambeVoiceDecoderTask", 4096, NULL, 1, NULL, 1) == pdFAIL)
+    {
+        Serial << "ambeVoiceDecoderTask start Error" << endl;
+    }
     startRX();
 }
 

@@ -1,7 +1,7 @@
 #pragma once
 #include <Stream.h>
 #include <Streaming.h>
-#if 1
+#if 0
 #define LOGRX  Serial
 #else
 #define LOGRX m_noOut
@@ -19,7 +19,7 @@
 #define LOGWEB m_noOut
 #endif
 
-#if 0
+#if 1
 #define LOGVOICE  Serial
 #else
 #define LOGVOICE m_noOut
