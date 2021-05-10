@@ -367,7 +367,7 @@ DStarDV::FrameData IRAM_ATTR DStarDV::getNextData()
     if(dataCounter  == 21)
     {
         dataCounter = 0;
-        memcpy(data.data, syncFrame, sizeof(FrameData));
+        memcpy(data.data, syncFrame, DStarDV::DSTAR_FRAME_SIZE);
     }
     else
     {
