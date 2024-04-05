@@ -51,7 +51,7 @@ QueueHandle_t txQueue;
 
 void checkLoraState(int state)
 {
-    if(state != ERR_NONE)
+    if(state != RADIOLIB_ERR_NONE)
     {
         Serial.print(F("failed, code "));
         Serial.println(state);
