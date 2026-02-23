@@ -1,7 +1,8 @@
 #pragma once
 #include <Stream.h>
 #include <stdint.h>
-#include <FreeRTOS.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
 
 using uint = unsigned int;
 

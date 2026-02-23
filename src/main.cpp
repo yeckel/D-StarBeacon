@@ -13,7 +13,7 @@
 #include <BitSlicer.h>
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
-#include <SPIFFS.h>
+#include <LittleFS.h>
 #include <Wire.h>
 #include <NoOut.h>
 
@@ -258,7 +258,7 @@ void setConfig(const char* cfg)
 }
 void readConfig()
 {
-    File file = SPIFFS.open("/config.txt", "r");
+    File file = LittleFS.open("/config.txt", "r");
     if(!file)
     {
         Serial << "Error opening the file '/config.txt' for reading" << endl;
@@ -401,7 +401,7 @@ void IRAM_ATTR rxBit()
 
 void IRAM_ATTR receivedSyncWord(void)
 {
-    radio.setDio1Action(rxBit);
+    radio.setDio1Action(rxBit, RISING);
     m_isRxOrTxActive = true;
 }
 //----------------------------------------------------------------------------------------
@@ -472,7 +472,7 @@ void startTX()
     m_DStarData.setMSG(config.dStarMsg);
     frameDataBitPos = DStarDV::SLOW_AMBE_BITSIZE;//to run into data fetch immediately
     radio.clearDio0Action();
-    radio.setDio1Action(txBit);
+    radio.setDio1Action(txBit, RISING);
     m_isRxOrTxActive = true;
     checkLoraState(radio.transmitDirect());
     Serial << __FUNCTION__ << endl;
@@ -482,7 +482,7 @@ void startRX()
     isPTTPressed = false;
     m_DStarData.reset();
     m_bitSlicer.reset();
-    radio.setDio0Action(receivedSyncWord);
+    radio.setDio0Action(receivedSyncWord, RISING);
     checkLoraState(radio.receiveDirect());
     Serial << __FUNCTION__ << endl;
 }
@@ -579,14 +579,14 @@ void writeParamToFile(const String& name, const String& value, File& file)
     Serial.printf("Written: %s %d\n", buff, wlen);
 }
 
-void writeParamToFile(AsyncWebParameter* param, File& file)
+void writeParamToFile(const AsyncWebParameter* param, File& file)
 {
     writeParamToFile(param->name().c_str(), param->value().c_str(), file);
 }
 
 const char* handleConfigPost(AsyncWebServerRequest* request)
 {
-    File file = SPIFFS.open("/config.txt", "w");
+    File file = LittleFS.open("/config.txt", "w");
     if(!file)
     {
         Serial.println("Error while opening '/config.txt' for writing");
@@ -774,20 +774,20 @@ void setupAsyncServer()
     // Route for root / web page
     server.on("/", HTTP_GET, [](AsyncWebServerRequest * request)
     {
-        request->send(SPIFFS, "/index.html", String("text/html"), false, processor);
+        request->send(LittleFS, "/index.html", String("text/html"), false, processor);
     });
     server.on("/config.txt", HTTP_GET, [](AsyncWebServerRequest * request)
     {
-        request->send(SPIFFS, "/config.txt", String("text/html"), false);
+        request->send(LittleFS, "/config.txt", String("text/html"), false);
     });
     server.on("/index.html", HTTP_GET, [](AsyncWebServerRequest * request)
     {
-        request->send(SPIFFS, "/index.html", String("text/html"), false, processor);
+        request->send(LittleFS, "/index.html", String("text/html"), false, processor);
     });
     server.on("/index.html", HTTP_POST, [](AsyncWebServerRequest * request)
     {
         handleConfigPost(request);
-        request->send(SPIFFS, "/index.html", String("text/html"), false, processor);
+        request->send(LittleFS, "/index.html", String("text/html"), false, processor);
     });
     server.onNotFound([](AsyncWebServerRequest * request)
     {
@@ -820,7 +820,7 @@ struct
 // ... would require a more sophisicated file format (currently one line SSID; one line Password
 void setupWifiList()
 {
-    File file = SPIFFS.open("/networks.txt", "r");
+    File file = LittleFS.open("/networks.txt", "r");
     if(!file)
     {
         Serial.println("There was an error opening the file '/networks.txt' for reading");
@@ -1114,10 +1114,10 @@ void setup()
     m_bitSlicer.setHeaderBuffer(headerRXTXBuffer, DSTAR::RF_HEADER_SIZE * 2); //TODO refactore to constrctor
     memset(m_dStarMsg, 0x20, DStarDV::DSTAR_MSG_SIZE);
     m_dStarMsg[DStarDV::DSTAR_MSG_SIZE] = 0x00;
-    Serial.println("Initializing SPIFFS");
-    if(!SPIFFS.begin(true))
+    Serial.println("Initializing LittleFS");
+    if(!LittleFS.begin(true))
     {
-        Serial.println("An Error has occurred while mounting SPIFFS");
+        Serial.println("An Error has occurred while mounting LittleFS");
         return;
     }
     Serial.println("Reading initial configuration");
