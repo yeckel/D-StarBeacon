@@ -1,0 +1,13 @@
+Callsign=YOURCAL
+QRT=434.800
+dStarMsg=D-Star Beacon
+dprsMsg=ESP32 D-Star Beacon
+BeaconInterval=30
+Suffix=1
+PWR=17
+Destination=DIRECT
+Repeater=DIRECT
+Companion=CQCQCQ
+Offset=0.0
+useFastData=true
+useFastGPS=true
