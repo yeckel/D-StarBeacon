@@ -16,6 +16,7 @@
 #include <LittleFS.h>
 #include <Wire.h>
 #include <NoOut.h>
+#include "esp_bt.h"  // for esp_bt_mem_release
 
 #ifndef LORA_IO1
 #define LORA_IO1 LORA_D1 //With board = ttgo-lora32-v21 is the port id different!
@@ -41,6 +42,64 @@ auto gpsSerial = Serial1;
 BluetoothSerial serialBT;
 AXP20X_Class axp;
 AsyncWebServer server(80);
+
+// Static HTML page served from PROGMEM (flash) to avoid heap pressure.
+// Config values are populated at runtime by JavaScript via GET /api/config.
+static const char HTML_INDEX[] PROGMEM = R"HTML(<!DOCTYPE html>
+<html><head><title>D-Star beacon</title><meta charset="UTF-8"></head>
+<body><h1>D-Star beacon</h1>
+<form method="POST" id="ConfigForm" action="index.html"><table><tbody>
+<tr><th>Item</th><th>Value</th></tr>
+<tr><td>Callsign (max 8 chars)</td><td><input name="Callsign" type="text" maxlength="8"></td></tr>
+<tr><td>Destination (max 8 chars)</td><td><input name="Destination" type="text" maxlength="8"></td></tr>
+<tr><td>Repeater (max 8 chars)</td><td><input name="Repeater" type="text" maxlength="8"></td></tr>
+<tr><td>Companion (max 8 chars)</td><td><input name="Companion" type="text" maxlength="8"></td></tr>
+<tr><td>APRS SSID</td><td><select name="Suffix" id="Suffix">
+<option value="0">Primary station (none)</option>
+<option value="1">Generic additional station: -1</option>
+<option value="2">Generic additional station: -2</option>
+<option value="3">Generic additional station: -3</option>
+<option value="4">Generic additional station: -4</option>
+<option value="5">Other network (D-Star, 3G): -5</option>
+<option value="6">Satellite: -6</option>
+<option value="7">Handheld radio: -7</option>
+<option value="8">Boat/ship: -8</option>
+<option value="9">Mobile station: -9</option>
+<option value="10">APRS-IS (no radio): -10</option>
+<option value="11">Balloon, aircraft, spacecraft: -11</option>
+<option value="12">APRStt, DTMF,..(one way): -12</option>
+<option value="13">Weather station: -13</option>
+<option value="14">Freight vehicle: -14</option>
+<option value="15">Generic additional station: -15</option>
+</select></td></tr>
+<tr><td>APRS symbol</td><td><input name="aprsSymbol" type="text" maxlength="2"></td></tr>
+<tr><td>QRT [MHz]</td><td><input name="QRT" type="text"></td></tr>
+<tr><td>Offset [kHz]</td>
+<td><input name="Offset" id="OffsetInput" type="number" step="0.001"></td>
+<td><input type="button" value="&lt;---" onclick="addAFC()"/></td>
+<td id="afcVal"></td></tr>
+<tr><td>TX Power [dBm] 2..17</td><td><input name="PWR" type="number" min="2" max="17"></td></tr>
+<tr><td>dStarMsg (max 20 chars)</td><td><input name="dStarMsg" type="text" maxlength="20"></td></tr>
+<tr><td>dprsMsg (max 67 chars)</td><td><input name="dprsMsg" type="text" maxlength="67"></td></tr>
+<tr><td>BeaconInterval [s] (0=off)</td><td><input name="BeaconInterval" type="number"></td></tr>
+<tr><td>Use DV fast data for TX</td><td><input type="checkbox" id="useFastData" name="useFastData"></td></tr>
+<tr><td>Use DV fast data for GPS</td><td><input type="checkbox" id="useFastGPS" name="useFastGPS"></td></tr>
+</tbody></table></form>
+<button type="submit" form="ConfigForm">Submit</button>
+<script>
+fetch('/api/config').then(function(r){return r.json();}).then(function(cfg){
+['Callsign','Destination','Repeater','Companion','aprsSymbol','QRT','Offset','PWR','dStarMsg','dprsMsg','BeaconInterval'].forEach(function(k){
+  var e=document.querySelector('[name="'+k+'"]');if(e)e.value=cfg[k];
+});
+document.getElementById('afcVal').textContent=cfg.AFC+' [kHz]';
+document.getElementById('Suffix').selectedIndex=parseInt(cfg.Suffix)||0;
+document.querySelector('[name="useFastData"]').checked=cfg.useFastData;
+document.querySelector('[name="useFastGPS"]').checked=cfg.useFastGPS;
+window._afc=parseFloat(cfg.AFC);window._offset=parseFloat(cfg.Offset);
+});
+function addAFC(){var e=document.getElementById('OffsetInput');e.value=(window._offset+window._afc).toFixed(3);}
+</script>
+</body></html>)HTML";
 
 static constexpr uint16_t RX_SCREEN_TIMEOUT_SECONDS{10};
 uint16_t m_RXDataShownSeconds{0};
@@ -487,89 +546,38 @@ void startRX()
     Serial << __FUNCTION__ << endl;
 }
 
-// Replaces placeholder with LED state value
-String processor(const String& var)
+// Serve config values as JSON — useful for debugging from curl.
+void handleApiConfig(AsyncWebServerRequest* request)
 {
-    char buff[20];
-    Serial.println(var);
-    if(var == "CALLSIGN")
-    {
-        return config.callsign;
-    }
-    if(var == "QRT")
-    {
-        sprintf(buff, "%7.3f", config.qrt);
-        return String(buff);
-    }
-    if(var == "Offset")
-    {
-        sprintf(buff, "%.3f", config.offset);
-        return String(buff);
-    }
-    if(var == "AFC")
-    {
-        sprintf(buff, "%.3f", m_afc / 1000);
-        return String(buff);
-    }
-    if(var == "dStarMsg")
-    {
-        return config.dStarMsg;
-    }
-    if(var == "dprsMsg")
-    {
-        return config.dprsMsg;
-    }
-    if(var == "BeaconInterval")
-    {
-        return String(config.beaconInterval);
-    }
-    if(var == "SUFFIX")
-    {
-        if(config.callsignSuffix.isEmpty())
-        {
-            return "0";
-        }
-        else
-        {
-            return config.callsignSuffix;
-        }
-    }
-    if(var == "PWR")
-    {
-        return String(config.txPower);
-    }
-    if(var == "DESTINATION")
-    {
-        return String(config.destination);
-    }
-    if(var == "REPEATER")
-    {
-        return String(config.repeater);
-    }
-    if(var == "COMPANION")
-    {
-        return String(config.companion);
-    }
-    if(var == "ASYMBOL")
-    {
-        return config.aprsSymbol;
-    }
-    if(var == "fastDataChecked")
-    {
-        if(config.isFastDataEnabled)
-        {
-            return "checked";
-        }
-    }
-    if(var == "fastGPSChecked")
-    {
-        if(config.isFastGPSEnabled)
-        {
-            return "checked";
-        }
-    }
-    return String();
+    char json[640];
+    snprintf(json, sizeof(json),
+        "{\"Callsign\":\"%s\",\"Destination\":\"%s\",\"Repeater\":\"%s\",\"Companion\":\"%s\","
+        "\"Suffix\":%s,\"aprsSymbol\":\"%s\",\"QRT\":\"%.3f\",\"Offset\":\"%.3f\",\"AFC\":\"%.3f\","
+        "\"PWR\":%d,\"dStarMsg\":\"%s\",\"dprsMsg\":\"%s\",\"BeaconInterval\":%d,"
+        "\"useFastData\":%s,\"useFastGPS\":%s}",
+        config.callsign.c_str(), config.destination.c_str(),
+        config.repeater.c_str(), config.companion.c_str(),
+        config.callsignSuffix.isEmpty() ? "0" : config.callsignSuffix.c_str(),
+        config.aprsSymbol.c_str(),
+        config.qrt, config.offset, m_afc / 1000.0,
+        config.txPower,
+        config.dStarMsg.c_str(), config.dprsMsg.c_str(),
+        config.beaconInterval,
+        config.isFastDataEnabled ? "true" : "false",
+        config.isFastGPSEnabled  ? "true" : "false");
+    request->send(200, "application/json", json);
 }
+
+// Serve the HTML page from PROGMEM (flash). Config values are loaded by JavaScript via /api/config.
+// Using AsyncProgmemResponse avoids heap allocation for page content — only _send_buffer (2880 B) is needed.
+void sendIndexHtml(AsyncWebServerRequest* request)
+{
+    Serial.printf("sendIndexHtml: free=%u largest=%u\n",
+        ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+    // Use beginResponse_P to create AsyncProgmemResponse (reads from PROGMEM, no heap copy of HTML).
+    request->send(request->beginResponse_P(200, "text/html", HTML_INDEX));
+}
+
 
 void writeParamToFile(const String& name, const String& value, File& file)
 {
@@ -774,20 +782,35 @@ void setupAsyncServer()
     // Route for root / web page
     server.on("/", HTTP_GET, [](AsyncWebServerRequest * request)
     {
-        request->send(LittleFS, "/index.html", String("text/html"), false, processor);
+        Serial.printf("GET / heap=%d\n", ESP.getFreeHeap());
+        sendIndexHtml(request);
     });
     server.on("/config.txt", HTTP_GET, [](AsyncWebServerRequest * request)
     {
+        Serial.printf("GET /config.txt heap=%d\n", ESP.getFreeHeap());
         request->send(LittleFS, "/config.txt", String("text/html"), false);
     });
     server.on("/index.html", HTTP_GET, [](AsyncWebServerRequest * request)
     {
-        request->send(LittleFS, "/index.html", String("text/html"), false, processor);
+        Serial.printf("GET /index.html heap=%d\n", ESP.getFreeHeap());
+        sendIndexHtml(request);
+    });
+    server.on("/api/config", HTTP_GET, [](AsyncWebServerRequest* request)
+    {
+        handleApiConfig(request);
+    });
+    server.on("/api/heap", HTTP_GET, [](AsyncWebServerRequest* request)
+    {
+        char buf[128];
+        snprintf(buf, sizeof(buf), "{\"free\":%u,\"largest\":%u,\"minFree\":%u}",
+            ESP.getFreeHeap(), ESP.getMaxAllocHeap(), ESP.getMinFreeHeap());
+        request->send(200, "application/json", buf);
     });
     server.on("/index.html", HTTP_POST, [](AsyncWebServerRequest * request)
     {
+        Serial.printf("POST /index.html heap=%d\n", ESP.getFreeHeap());
         handleConfigPost(request);
-        request->send(LittleFS, "/index.html", String("text/html"), false, processor);
+        sendIndexHtml(request);
     });
     server.onNotFound([](AsyncWebServerRequest * request)
     {
@@ -940,18 +963,28 @@ void loopWifiScan()
     WiFi.disconnect(true);
     WiFi.mode(WIFI_STA);
     int index = -1;
-    int n = WiFi.scanNetworks();
-    for(int i = 0; i < n; i++)
+
+    // Scan up to 3 times — a single scan can miss a network
+    for(int attempt = 0; attempt < 3 && index < 0; attempt++)
     {
-        String ssid = WiFi.SSID(i);
-        String mac = WiFi.BSSIDstr(i);
-        String encryptionTypeDescription = translateEncryptionType(WiFi.encryptionType(i));
-        Serial.printf("Network %s: RSSI %d, MAC %s, enc: %s\n", ssid.c_str(), WiFi.RSSI(i), mac.c_str(), encryptionTypeDescription.c_str());
-        int curidx = fetchWifiIndex(ssid.c_str());
-        if(curidx >= 0 && index == -1)
+        if(attempt > 0)
         {
-            index = curidx;
-            Serial.printf("Match found at scan entry %d, config network %d\n", i, index);
+            Serial.println("Network not found, retrying scan...");
+            delay(1000);
+        }
+        int n = WiFi.scanNetworks();
+        for(int i = 0; i < n; i++)
+        {
+            String ssid = WiFi.SSID(i);
+            String mac = WiFi.BSSIDstr(i);
+            String encryptionTypeDescription = translateEncryptionType(WiFi.encryptionType(i));
+            Serial.printf("Network %s: RSSI %d, MAC %s, enc: %s\n", ssid.c_str(), WiFi.RSSI(i), mac.c_str(), encryptionTypeDescription.c_str());
+            int curidx = fetchWifiIndex(ssid.c_str());
+            if(curidx >= 0 && index == -1)
+            {
+                index = curidx;
+                Serial.printf("Match found at scan entry %d, config network %d\n", i, index);
+            }
         }
     }
     if(index >= 0)    // some network was found
@@ -1085,7 +1118,13 @@ void setup()
 {
     pinMode(BUILTIN_LED, OUTPUT);
     Serial.begin(115200);
+    Serial.printf("[boot] heap free=%u largest=%u\n", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
     gpsSerial.begin(9600, SERIAL_8N1, GPS_TX, GPS_RX);
+    // We only use Classic BT (SPP) — release BLE host + controller memory before BT init.
+    // Must be called before serialBT.begin() / esp_bt_controller_init().
+    // Frees ~30-70 KB of heap that would otherwise be reserved for the BLE stack.
+    esp_bt_mem_release(ESP_BT_MODE_BLE);
+    Serial.printf("[bt-mem-release] heap free=%u largest=%u\n", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
     serialBT.begin("D-Star Beacon");
     m_DStarData.setDataOutput(&serialBT);
     Wire.begin(SDA, SCL);
@@ -1179,8 +1218,63 @@ void resetTXData()
 }
 
 auto m_lastTime = millis();
+void handleSerialCommand(const String& cmd)
+{
+    if(cmd == "status" || cmd == "s")
+    {
+        Serial.printf("[status] WiFi mode: %s\n",
+            WiFi.getMode() == WIFI_STA ? "STA" :
+            WiFi.getMode() == WIFI_AP  ? "AP"  : "OFF");
+        if(WiFi.status() == WL_CONNECTED)
+        {
+            Serial.printf("[status] SSID: %s  RSSI: %d dBm\n",
+                WiFi.SSID().c_str(), WiFi.RSSI());
+            Serial.printf("[status] IP: %s  GW: %s\n",
+                WiFi.localIP().toString().c_str(),
+                WiFi.gatewayIP().toString().c_str());
+        }
+        else if(WiFi.getMode() == WIFI_AP)
+        {
+            Serial.printf("[status] AP IP: %s\n", WiFi.softAPIP().toString().c_str());
+        }
+        else
+        {
+            Serial.println("[status] WiFi not connected");
+        }
+        Serial.printf("[status] Heap free=%d  largest=%d  minEver=%d\n",
+            ESP.getFreeHeap(), ESP.getMaxAllocHeap(), ESP.getMinFreeHeap());
+    }
+    else if(cmd == "reboot" || cmd == "r")
+    {
+        Serial.println("Rebooting...");
+        Serial.flush();
+        ESP.restart();
+    }
+    else if(cmd.length() > 0)
+    {
+        Serial.println("Commands: status (s)  reboot (r)");
+    }
+}
+
 void loop()
 {
+    // Handle serial console commands
+    static String serialBuf;
+    while(Serial.available())
+    {
+        char c = Serial.read();
+        if(c == '\n' || c == '\r')
+        {
+            serialBuf.trim();
+            handleSerialCommand(serialBuf);
+            serialBuf = "";
+        }
+        else
+        {
+            serialBuf += c;
+        }
+    }
+
     //run each 1s
     if(millis() - m_lastTime > 1000)
     {
@@ -1189,6 +1283,15 @@ void loop()
         if(!m_isRxOrTxActive)
         {
             repaintDisplay();
+        }
+        // Print heap every 10s
+        static int heapLogCounter = 0;
+        if(++heapLogCounter >= 10)
+        {
+            heapLogCounter = 0;
+            Serial.printf("[heap] free=%d min=%d largest=%d\n",
+                          ESP.getFreeHeap(), ESP.getMinFreeHeap(),
+                          ESP.getMaxAllocHeap());
         }
     }
 

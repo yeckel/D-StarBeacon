@@ -1,110 +1,55 @@
 <!DOCTYPE html>
-<html>
-<head>
-    <title>D-Star beacon</title>
-    <meta charset="UTF-8">
-    <link rel="stylesheet" type="text/css" href="style.css">
-</head>
-<body onload="selectSuffix()">
-<h1>D-Star beacon</h1>
-<form method="POST" id="ConfigForm" action="index.html">
-    <table>
-        <tbody>
-        <tr>
-            <th>Item</th>
-            <th>Value</th>
-        </tr>
-        <tr>
-            <td>Callsign (max 8 chars)</td>
-            <td><input name="Callsign" type="text" maxlength="8" value="%CALLSIGN%"></td>
-        </tr>
-        <tr>
-            <td>Destination (max 8 chars)</td>
-            <td><input name="Destination" type="text" maxlength="8" value="%DESTINATION%"></td>
-        </tr>
-        <tr>
-            <td>Repeater (max 8 chars)</td>
-            <td><input name="Repeater" type="text" maxlength="8" value="%REPEATER%"></td>
-        </tr>
-        <tr>
-            <td>Companion (max 8 chars)</td>
-            <td><input name="Companion" type="text" maxlength="8" value="%COMPANION%"></td>
-        </tr>
-        <tr>
-            <td>APRS SSID</td>
-            <td><select name="Suffix" id="Suffix">
-                <option value="0">Primary station (none)</option>
-                <option value="1">Generic additional station: -1</option>
-                <option value="2">Generic additional station: -2</option>
-                <option value="3">Generic additional station: -3</option>
-                <option value="4">Generic additional station: -4</option>
-                <option value="5">Other network (D-Star, 3G): -5</option>
-                <option value="6">Satellite: -6</option>
-                <option value="7">Handheld radio: -7</option>
-                <option value="8">Boat/ship: -8</option>
-                <option value="9">Mobile station: -9</option>
-                <option value="10">APRS-IS (no radio): -10</option>
-                <option value="11">Balloon, aircraft, spacecraft: -11</option>
-                <option value="12">APRStt, DTMF,..(one way): -12</option>
-                <option value="13">Weather station: -13</option>
-                <option value="14">Freight vehicle: -14</option>
-                <option value="15">Generic additional station: -15</option>
-            </select>
-            </td>
-        </tr>
-        <tr>
-            <td>APRS symbol</td>
-            <td><input name="aprsSymbol" type="text" maxlength="2" value="%ASYMBOL%"></td>
-        </tr>
-        <tr>
-            <td>QRT [MHz]</td>
-            <td><input name="QRT" type="text" value="%QRT%"></td>
-        </tr>
-        <tr>
-            <td>Offset [kHz]</td>
-            <td><input name="Offset" id="OffsetInput" type="number" step="0.001" value="%Offset%"></td>
-            <td><input type="button" value="&#60;---" onclick="addAFC()"/></td>
-            <td>%AFC% [kHz]</td>
-        </tr>
-        <tr>
-            <td>TX Power [dBm] 2..17</td>
-            <td><input name="PWR" type="number" min="2" max="17" value="%PWR%"></td>
-        </tr>
-        <tr>
-            <td>dStarMsg (max 20 chars)</td>
-            <td><input name="dStarMsg" type="text" maxlength="20" value="%dStarMsg%"></td>
-        </tr>
-        <tr>
-            <td>dprsMsg (max 67 chars)</td>
-            <td><input name="dprsMsg" type="text" maxlength="67" value="%dprsMsg%"></td>
-        </tr>
-        <tr>
-            <td>BeaconInterval [s](0 off)</td>
-            <td><input name="BeaconInterval" type="number" value="%BeaconInterval%"></td>
-        </tr>
-        <tr>
-            <td>Use DV fast data for TX</td>
-            <td><input type="checkbox" id="useFastData" name="useFastData" %fastDataChecked%></td>
-        </tr>
-        <tr>
-            <td>Use DV fast data for GPS</td>
-            <td><input type="checkbox" id="useFastGPS" name="useFastGPS" %fastGPSChecked%></td>
-        </tr>
-        </tbody>
-    </table>
-</form>
-<button type="submit" form="ConfigForm" value="Submit">Submit</button>
+<html><head><title>D-Star beacon</title><meta charset="UTF-8"></head>
+<body><h1>D-Star beacon</h1>
+<form method="POST" id="ConfigForm" action="index.html"><table><tbody>
+<tr><th>Item</th><th>Value</th></tr>
+<tr><td>Callsign (max 8 chars)</td><td><input name="Callsign" type="text" maxlength="8"></td></tr>
+<tr><td>Destination (max 8 chars)</td><td><input name="Destination" type="text" maxlength="8"></td></tr>
+<tr><td>Repeater (max 8 chars)</td><td><input name="Repeater" type="text" maxlength="8"></td></tr>
+<tr><td>Companion (max 8 chars)</td><td><input name="Companion" type="text" maxlength="8"></td></tr>
+<tr><td>APRS SSID</td><td><select name="Suffix" id="Suffix">
+<option value="0">Primary station (none)</option>
+<option value="1">Generic additional station: -1</option>
+<option value="2">Generic additional station: -2</option>
+<option value="3">Generic additional station: -3</option>
+<option value="4">Generic additional station: -4</option>
+<option value="5">Other network (D-Star, 3G): -5</option>
+<option value="6">Satellite: -6</option>
+<option value="7">Handheld radio: -7</option>
+<option value="8">Boat/ship: -8</option>
+<option value="9">Mobile station: -9</option>
+<option value="10">APRS-IS (no radio): -10</option>
+<option value="11">Balloon, aircraft, spacecraft: -11</option>
+<option value="12">APRStt, DTMF,..(one way): -12</option>
+<option value="13">Weather station: -13</option>
+<option value="14">Freight vehicle: -14</option>
+<option value="15">Generic additional station: -15</option>
+</select></td></tr>
+<tr><td>APRS symbol</td><td><input name="aprsSymbol" type="text" maxlength="2"></td></tr>
+<tr><td>QRT [MHz]</td><td><input name="QRT" type="text"></td></tr>
+<tr><td>Offset [kHz]</td>
+<td><input name="Offset" id="OffsetInput" type="number" step="0.001"></td>
+<td><input type="button" value="&lt;---" onclick="addAFC()"/></td>
+<td id="afcVal"></td></tr>
+<tr><td>TX Power [dBm] 2..17</td><td><input name="PWR" type="number" min="2" max="17"></td></tr>
+<tr><td>dStarMsg (max 20 chars)</td><td><input name="dStarMsg" type="text" maxlength="20"></td></tr>
+<tr><td>dprsMsg (max 67 chars)</td><td><input name="dprsMsg" type="text" maxlength="67"></td></tr>
+<tr><td>BeaconInterval [s] (0=off)</td><td><input name="BeaconInterval" type="number"></td></tr>
+<tr><td>Use DV fast data for TX</td><td><input type="checkbox" id="useFastData" name="useFastData"></td></tr>
+<tr><td>Use DV fast data for GPS</td><td><input type="checkbox" id="useFastGPS" name="useFastGPS"></td></tr>
+</tbody></table></form>
+<button type="submit" form="ConfigForm">Submit</button>
 <script>
-function addAFC() {
-  document.getElementById("OffsetInput").value = parseFloat("%Offset%") + parseFloat("%AFC%");
-}
-function selectSuffix(){
-    var chosenSuffix=%SUFFIX%;
-    if(chosenSuffix >=0 && chosenSuffix <=15){
-        document.getElementById("Suffix").selectedIndex = chosenSuffix;
-    }
-}
+fetch('/api/config').then(function(r){return r.json();}).then(function(cfg){
+['Callsign','Destination','Repeater','Companion','aprsSymbol','QRT','Offset','PWR','dStarMsg','dprsMsg','BeaconInterval'].forEach(function(k){
+  var e=document.querySelector('[name="'+k+'"]');if(e)e.value=cfg[k];
+});
+document.getElementById('afcVal').textContent=cfg.AFC+' [kHz]';
+document.getElementById('Suffix').selectedIndex=parseInt(cfg.Suffix)||0;
+document.querySelector('[name="useFastData"]').checked=cfg.useFastData;
+document.querySelector('[name="useFastGPS"]').checked=cfg.useFastGPS;
+window._afc=parseFloat(cfg.AFC);window._offset=parseFloat(cfg.Offset);
+});
+function addAFC(){var e=document.getElementById('OffsetInput');e.value=(window._offset+window._afc).toFixed(3);}
 </script>
-</body>
-</html>
-
+</body></html>
