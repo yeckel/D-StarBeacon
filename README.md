@@ -52,7 +52,25 @@ Probably best D-Star info sources:
 * __to__ -  timeout until the Received screen is shown
 
 ### Web interface
-You shall connect to the provided IP address with an browser and set your callsign and so on. The items shall be self-explanatory. Setting is stored locally into the file config.txt
+Connect to the IP address shown on the display with a browser and configure your callsign and other parameters. Settings are stored in `config.txt` on the LittleFS filesystem.
+
+The web interface loads its current values via the REST API (`GET /api/config`) so the page renders correctly even after a fresh boot without a page reload.
+
+#### REST API endpoints
+| Endpoint | Method | Description |
+|---|---|---|
+| `/` or `/index.html` | GET | Configuration web page |
+| `/api/config` | GET | Current config as JSON |
+| `/api/config` | POST | Save new config (same as web form submit) |
+| `/api/heap` | GET | Heap diagnostics: `{"free":N,"largest":N,"minFree":N}` |
+
+### Serial console commands
+Connect at 115200 baud. The following commands are available:
+
+| Command | Shortcut | Description |
+|---|---|---|
+| `status` | `s` | Print WiFi mode, SSID, IP address, RSSI and heap statistics |
+| `reboot` | `r` | Reboot the device |
 
 ### Sending and receiving images and text messages
 [Video on YouTube](https://www.youtube.com/watch?v=e5j2WmVVSnE)
@@ -67,6 +85,8 @@ password network2
 ...
 ```
 If no preconfigured network is found, then the first network from the list is created as local access point.
+
+Multiple networks are supported — the device scans and picks the strongest known one (up to 3 scan retries).
 
 ## HW requirement
 The transceiver was developed on TTGO T-Beam 433MHz version with AXP power management. The older one with the manual power switch does work too. However mine has hard time getting GPS fix. Other ESP32 SX1278 boards could be used too, just check pins assignments and modify platformio.ini ```board = ttgo-lora32-v21``` works out of the box.
@@ -84,7 +104,7 @@ works GMSK at 4800bits/s fine at +/- 600Hz offset from the carrier frequency. Wi
 * <del> Send same data to serial and BT as IC-705 does (images, text messages)
 * <del> Unite transmitter with receiver into transceiver
 * <del> Use SX1278 AFC (automatic frequency correction) to correct XTAL offset and thermal drifft
-* Create some ??web?? interface for setting 
+* <del> Web interface for setting
     * <del>Callsign
     * <del>D-Star message
     * <del>DPRS - message
@@ -93,9 +113,9 @@ works GMSK at 4800bits/s fine at +/- 600Hz offset from the carrier frequency. Wi
 * <del> Use D-Star sync frame to get into receive stream (low prio)
    * <del> Using for sync in RX DV fast data
    * <del> Not possible to start RX without preamble and prefix (SX1278 allows just one prefix)   
-* Implement support for DV fast data - IC-705 sometimes switches to them even when turned off (SW Bug?)
+* <del> Implement support for DV fast data - IC-705 sometimes switches to them even when turned off (SW Bug?)
    * <del> RX
-   * TX
+   * <del> TX
      * <del> Configuration  enable fast data, enable fast GPS
      * <del> encode and send
 * <del>Implement setting RF offset with suggestion from the last AGC run
